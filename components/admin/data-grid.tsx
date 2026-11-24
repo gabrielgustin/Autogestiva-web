@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronDown, Copy, KeyRound, RefreshCw, Search } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, Copy, KeyRound, RefreshCw, Search } from 'lucide-react'
+import { SelectField } from '@/components/admin/pickers'
 
 type TableRef = { name: string; schema: string }
 type GridColumn = { name: string; type: string; nullable: boolean; primary_key: boolean }
@@ -81,20 +82,13 @@ export function DataGrid({ projectId, tables }: { projectId: string; tables: Tab
   return (
     <section aria-label="Registros de la tabla" className="overflow-hidden rounded-2xl border border-line bg-white">
       <div className="flex flex-col gap-2 border-b border-line p-3 md:flex-row md:items-center md:p-4">
-        <div className="relative md:w-72">
-          <select
-            aria-label="Tabla"
+        <div className="font-mono md:w-72">
+          <SelectField
+            ariaLabel="Tabla"
             value={tableKey}
-            onChange={(event) => changeTable(event.target.value)}
-            className="h-11 w-full appearance-none rounded-xl border border-line bg-white pr-10 pl-4 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-          >
-            {tables.map((table) => (
-              <option key={`${table.schema}.${table.name}`} value={`${table.schema}.${table.name}`} className="bg-white text-ink">
-                {table.schema === 'public' ? table.name : `${table.schema}.${table.name}`}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink/50" aria-hidden />
+            onChange={changeTable}
+            options={tables.map((table) => ({ value: `${table.schema}.${table.name}`, label: table.schema === 'public' ? table.name : `${table.schema}.${table.name}` }))}
+          />
         </div>
         <form
           className="relative flex-1 md:max-w-sm"
@@ -197,21 +191,16 @@ export function DataGrid({ projectId, tables }: { projectId: string; tables: Tab
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            aria-label="Filas por página"
-            value={pageSize}
-            onChange={(event) => {
-              setPageSize(Number(event.target.value))
+          <SelectField
+            ariaLabel="Filas por página"
+            value={String(pageSize)}
+            onChange={(value) => {
+              setPageSize(Number(value))
               setPage(1)
             }}
-            className="h-10 rounded-full border border-line bg-white px-3 text-sm text-ink outline-none focus:border-brand"
-          >
-            {[25, 50, 100].map((size) => (
-              <option key={size} value={size} className="bg-white text-ink">
-                {size} filas
-              </option>
-            ))}
-          </select>
+            options={[25, 50, 100].map((size) => ({ value: String(size), label: `${size} filas` }))}
+            className="h-10 w-32 rounded-full"
+          />
           <button type="button" onClick={copyData} disabled={!data} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 font-semibold hover:border-ink/30 disabled:opacity-40">
             {copied ? <Check className="size-4 text-brand" /> : <Copy className="size-4" />}
             {copied ? 'Copiado' : 'Copiar datos'}

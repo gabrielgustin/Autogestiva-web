@@ -112,7 +112,8 @@ export function Badge({ tone = 'gray', children, className = '' }: { tone?: keyo
 // Ventana modal: cierra con Escape o tocando afuera, y bloquea el scroll de la página mientras está abierta.
 export function Modal({ title, eyebrow, onClose, children, footer }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    // Escape con un calendario o una lista abiertos cierra solo ese desplegable, no la ventana.
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper]')) onClose() }
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onKey)

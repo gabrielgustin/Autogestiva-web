@@ -7,10 +7,15 @@ import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/c
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
 import { nextPaymentDate } from '@/lib/admin/payments'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
+import { DateField, SelectField } from '@/components/admin/pickers'
 
 const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '' }
 const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual']
 const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
+const CUSTOM_PLAN = '__personalizado'
+const isCustomPlan = (plan: string) => !!plan && !planOptions.includes(plan)
+// Lo que se escribe en "Monto personalizado" se guarda con el mismo formato que los planes fijos: $12.500.
+const formatPlan = (digits: string) => (digits ? `$${Number(digits).toLocaleString('es-AR')}` : '')
 
 // Secciones de la ficha: qué campos van juntos y cuáles son obligatorios.
 const formSections: { title: string; fields: (keyof ClientInput)[] }[] = [
@@ -77,6 +82,7 @@ export function ClientsDashboard() {
   const [form, setForm] = useState<ClientInput>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [customPlan, setCustomPlan] = useState(false)
   const [error, setError] = useState('')
   const [toast, setToast] = useState<Toast | null>(null)
   const [busyRow, setBusyRow] = useState<string | null>(null)
@@ -163,6 +169,7 @@ export function ClientsDashboard() {
   function openNew() {
     setEditing(null)
     setForm({ ...emptyForm })
+    setCustomPlan(false)
     setFormError('')
     setIsFormOpen(true)
   }
@@ -170,6 +177,7 @@ export function ClientsDashboard() {
     setSelectedClient(null)
     setEditing(client)
     setForm(toInput(client))
+    setCustomPlan(isCustomPlan(client.plan))
     setFormError('')
     setIsFormOpen(true)
   }
@@ -194,6 +202,9 @@ export function ClientsDashboard() {
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
+    // Los selectores propios no usan la validación nativa: se revisan acá los obligatorios.
+    const missing = [...requiredFields].filter((field) => !form[field].trim()).map((field) => (field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]))
+    if (missing.length) return setFormError(`Completá: ${missing.join(', ')}.`)
     setSaving(true)
     setFormError('')
     try {
@@ -450,29 +461,54 @@ export function ClientsDashboard() {
                 <legend className="eyebrow mb-3 text-[10px] text-muted-ink">{section.title}</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {section.fields.map((field) => (
-                    <label key={field} className="text-xs font-semibold text-ink/70">
+                    <div key={field} className="text-xs font-semibold text-ink/70">
                       {field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]}
                       {requiredFields.has(field) && <span className="text-orange-600"> *</span>}
-                      {field === 'plan' || field === 'metodoPago' ? (
-                        <div className="relative mt-1.5">
-                          <select required value={form[field]} onChange={(e) => update(field, e.target.value)} className={`${inputClass} appearance-none pr-10`}>
-                            <option value="">Elegí {field === 'plan' ? 'un plan' : 'un método'}</option>
-                            {/* Si el valor guardado no está en la lista, se conserva para no perderlo al editar. */}
-                            {[...new Set([...(field === 'plan' ? planOptions : paymentOptions), ...(form[field] ? [form[field]] : [])])].map((option) => <option key={option} value={option}>{option}</option>)}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
-                        </div>
-                      ) : (
-                        <input
-                          required={requiredFields.has(field)}
-                          type={field === 'mail' ? 'email' : field === 'telefono' ? 'tel' : ['dominioVencimiento', 'ultimoPago'].includes(field) ? 'date' : 'text'}
-                          autoComplete="off"
-                          value={form[field]}
-                          onChange={(e) => update(field, e.target.value)}
-                          className={`${inputClass} mt-1.5`}
-                        />
-                      )}
-                    </label>
+                      <div className="mt-1.5">
+                        {field === 'plan' ? (
+                          <div className="grid gap-2">
+                            <SelectField
+                              ariaLabel="Plan"
+                              placeholder="Elegí un plan"
+                              value={customPlan ? CUSTOM_PLAN : form.plan}
+                              onChange={(value) => {
+                                const custom = value === CUSTOM_PLAN
+                                setCustomPlan(custom)
+                                update('plan', custom ? (isCustomPlan(form.plan) ? form.plan : '') : value)
+                              }}
+                              options={[...planOptions, { value: CUSTOM_PLAN, label: 'Monto personalizado…' }]}
+                            />
+                            {customPlan && (
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink/50">$</span>
+                                <input
+                                  aria-label="Monto personalizado del plan"
+                                  inputMode="numeric"
+                                  autoFocus
+                                  placeholder="Ej.: 12.500"
+                                  value={form.plan.replace(/[^0-9]/g, '') ? Number(form.plan.replace(/[^0-9]/g, '')).toLocaleString('es-AR') : ''}
+                                  onChange={(e) => update('plan', formatPlan(e.target.value.replace(/[^0-9]/g, '').slice(0, 9)))}
+                                  className={`${inputClass} pl-7`}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ) : field === 'metodoPago' ? (
+                          <SelectField ariaLabel="Método de pago" placeholder="Elegí un método" value={form.metodoPago} onChange={(value) => update('metodoPago', value)} options={[...new Set([...paymentOptions, ...(form.metodoPago ? [form.metodoPago] : [])])]} />
+                        ) : field === 'dominioVencimiento' || field === 'ultimoPago' ? (
+                          <DateField ariaLabel={field === 'ultimoPago' ? 'Fecha del último pago' : 'Vencimiento del dominio'} value={form[field]} onChange={(value) => update(field, value)} />
+                        ) : (
+                          <input
+                            aria-label={COLUMN_LABELS[field]}
+                            type={field === 'mail' ? 'email' : field === 'telefono' ? 'tel' : 'text'}
+                            autoComplete="off"
+                            value={form[field]}
+                            onChange={(e) => update(field, e.target.value)}
+                            className={inputClass}
+                          />
+                        )}
+                      </div>
+                    </div>
                   ))}
                   {section.title === 'Cobro' && (
                     <div className="text-xs font-semibold text-ink/70">
@@ -500,15 +536,7 @@ export function ClientsDashboard() {
 }
 
 function SelectFilter({ value, onChange, allLabel, options }: { value: string; onChange: (value: string) => void; allLabel: string; options: string[] }) {
-  return (
-    <div className="relative min-w-0 md:w-52">
-      <select aria-label={allLabel} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} appearance-none truncate pr-9`}>
-        <option value="all">{allLabel}</option>
-        {options.map((item) => <option key={item}>{item}</option>)}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
-    </div>
-  )
+  return <SelectField ariaLabel={allLabel} value={value} onChange={onChange} options={[{ value: 'all', label: allLabel }, ...options]} className="min-w-0 md:w-52" />
 }
 
 function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onOpen }: { alert: ClientAlert; client?: SheetClient; showService: boolean; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {

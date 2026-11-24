@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Activity, ArrowUpRight, Database, HardDrive, Pause, Play, RefreshCw, Server, Wallet } from 'lucide-react'
-import { AdminShell, Badge, EmptyState, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
+import { AdminShell, Badge, EmptyState, PageHeader, Stat, btn, card } from '@/components/admin/ui'
+import { MonthField } from '@/components/admin/pickers'
 
 type Cost = { compute: number; storage: number; restore: number; snapshots: number; branches: number; transfer: number; total: number }
 type Spike = { date: string; cost: number; average: number }
@@ -106,8 +107,7 @@ export default function InfrastructureDashboard() {
     <AdminShell>
       <PageHeader eyebrow="Neon" title="Infraestructura" description="Consumo y costo de las bases de datos de todos tus proyectos.">
         <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); load(month) }}>
-          <label className="sr-only" htmlFor="month">Mes a consultar</label>
-          <input id="month" type="month" value={month} max={currentMonth} onChange={(event) => setMonth(event.target.value)} className={`${inputClass} h-10 w-auto rounded-full px-4`} />
+          <MonthField ariaLabel="Mes a consultar" value={month} max={currentMonth} onChange={(value) => { setMonth(value); load(value) }} />
           <button type="submit" disabled={loading} className={btn.secondary}>
             <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
             {loading ? 'Cargando' : month === loadedMonth ? 'Actualizar' : 'Consultar'}
