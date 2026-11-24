@@ -289,14 +289,6 @@ export const clients: Client[] = [
     tall: true,
   },
   {
-    name: "PipetLabor",
-    logo: "/images/clients/pipetlabor.png",
-    url: "https://www.pipetlabor.com.ar",
-    tile: "#ffffff",
-    keepColor: true,
-    tall: true,
-  },
-  {
     name: "MAHGA Marketing & Eventos",
     logo: "/images/clients/mahga.png",
     url: "https://mahga-minijuegos.vercel.app",
