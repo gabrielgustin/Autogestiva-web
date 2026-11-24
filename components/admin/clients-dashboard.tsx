@@ -81,6 +81,7 @@ export function ClientsDashboard() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [hasScrolled, setHasScrolled] = useState(false)
+  const [mpPaid, setMpPaid] = useState<Record<string, string>>({})
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
@@ -101,6 +102,8 @@ export function ClientsDashboard() {
 
   useEffect(() => {
     load()
+    // Pagos confirmados por Mercado Pago; si falla, los avisos quedan como estaban.
+    fetch('/api/administracion/mercadopago', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => d?.pagos && setMpPaid(d.pagos)).catch(() => {})
     const onScroll = () => setHasScrolled(window.scrollY > 24)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
@@ -124,7 +127,7 @@ export function ClientsDashboard() {
       .filter(({ date }) => date >= today)
       .sort((a, b) => a.date.getTime() - b.date.getTime())[0] ?? null
   }, [clients])
-  const alerts = useMemo(() => buildClientAlerts(clients), [clients])
+  const alerts = useMemo(() => buildClientAlerts(clients, new Date(), mpPaid), [clients, mpPaid])
   const filtered = useMemo(
     () =>
       clients.filter((client) => {
@@ -292,6 +295,7 @@ export function ClientsDashboard() {
                 </ul>
               </section>
             )}
+            {Object.keys(mpPaid).length > 0 && <p className="mb-4 text-xs text-adm-brand-foreground/55">Mercado Pago confirma el último cobro de {Object.keys(mpPaid).length} clientes: {Object.entries(mpPaid).map(([empresa, day]) => `${empresa} (${formatDate(day)})`).join(' · ')}</p>}
             {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
             <section className="overflow-hidden rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10">
               <div className="flex flex-col gap-3 border-b border-adm-brand-foreground/10 p-3 sm:p-4 md:flex-row">

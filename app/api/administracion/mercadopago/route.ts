@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin/require-admin'
+import { MP_PAYER_TO_EMPRESA } from '@/lib/admin/mercadopago-links'
 
 export const dynamic = 'force-dynamic'
 
-// Consulta de prueba: lista las suscripciones de la cuenta de Mercado Pago (solo lectura, solo admin).
+// Solo lectura y solo admin. `pagos` = último cobro procesado por empresa (YYYY-MM-DD); el resto es detalle para revisar.
 export async function GET() {
   const denied = await requireAdmin()
   if (denied) return denied
@@ -24,7 +25,17 @@ export async function GET() {
     }),
   )
   const historial = Object.fromEntries(cobros)
+  const pagos: Record<string, string> = {}
+  for (const item of results) {
+    const empresa = item.status === 'authorized' ? MP_PAYER_TO_EMPRESA[[item.payer_first_name, item.payer_last_name].filter(Boolean).join(' ')] : undefined
+    if (!empresa) continue
+    for (const cobro of historial[item.id] ?? []) {
+      const day = String(cobro.fechaDebito ?? '').slice(0, 10)
+      if (cobro.estado === 'processed' && day > (pagos[empresa] ?? '')) pagos[empresa] = day
+    }
+  }
   return NextResponse.json({
+    pagos,
     total: body?.paging?.total ?? results.length,
     porEstado: results.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.status]: (acc[item.status] ?? 0) + 1 }), {}),
     campos: results[0] ? Object.keys(results[0]) : [],
