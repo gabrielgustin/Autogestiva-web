@@ -470,7 +470,7 @@ function clientLabel(nombre: string) {
   return feminineNames.has(normalizeText(nombre)) ? 'Clienta' : 'Cliente'
 }
 
-const rowGridClass = 'grid grid-cols-2 items-start gap-x-4 gap-y-3 p-4 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] [&>*]:self-start'
+const rowGridClass = 'relative grid grid-cols-2 items-start gap-x-3 gap-y-2 p-3 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] [&>*]:self-start'
 
 function summarize(values: string[], plural: string) {
   if (values.length === 0) return '—'
@@ -496,8 +496,8 @@ function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp,
         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggle() } }}
         className={`${rowGridClass} cursor-pointer border-l-2 ${expanded ? 'border-adm-orange/50' : 'border-transparent'} transition-colors hover:bg-adm-brand-foreground/5 focus:outline-none focus:ring-2 focus:ring-adm-orange/60 md:items-start`}
       >
-        <div className="col-span-2 min-w-0 md:col-span-1">
-          <div className="text-xs text-adm-brand-foreground/50">{names.length > 1 ? 'Clientes' : clientLabel(members[0].nombre)}</div>
+        <div className="col-span-2 min-w-0 pr-28 md:col-span-1 md:pr-0">
+          <div className="hidden text-xs text-adm-brand-foreground/50 md:block">{names.length > 1 ? 'Clientes' : clientLabel(members[0].nombre)}</div>
           <div className="truncate font-bold" title={names.join(', ')}>{names.join(', ') || '—'}</div>
         </div>
         <div className="min-w-0">
@@ -513,7 +513,7 @@ function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp,
           <div className="min-h-4 text-xs leading-4 text-adm-brand-foreground/50">Plan (total)</div>
           <div className="font-semibold leading-6 text-adm-orange">{totalPlan ? `$${totalPlan.toLocaleString('es-AR')}` : '—'}</div>
         </div>
-        <div className="col-span-2 flex items-center gap-1 md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
+        <div className="absolute right-2 top-2 flex items-center gap-1 md:static md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
           <div className="mr-1 flex flex-col">
             <button type="button" aria-label={`Mover ${members[0].empresa} hacia arriba`} disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
             <button type="button" aria-label={`Mover ${members[0].empresa} hacia abajo`} disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
@@ -535,41 +535,41 @@ function ClientRow({ client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpe
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
-      className="grid cursor-pointer grid-cols-2 items-start gap-x-4 gap-y-3 p-4 transition-colors hover:bg-adm-brand-foreground/5 focus:outline-none focus:ring-2 focus:ring-adm-orange/60 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] md:items-start"
+      className="relative grid cursor-pointer grid-cols-6 items-start gap-x-3 gap-y-2 p-3 transition-colors hover:bg-adm-brand-foreground/5 focus:outline-none focus:ring-2 focus:ring-adm-orange/60 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] md:items-start"
     >
-      <div className="col-span-2 min-w-0 md:col-span-1">
-        <div className="text-xs text-adm-brand-foreground/50">{clientLabel(client.nombre)}</div>
+      <div className="col-span-6 min-w-0 pr-28 md:col-span-1 md:pr-0">
+        <div className="hidden text-xs text-adm-brand-foreground/50 md:block">{clientLabel(client.nombre)}</div>
         <div className="font-bold">{client.nombre} {client.apellido}</div>
         {client.telefono ? (
           <a href={`https://wa.me/${client.telefono.replace(/\D/g, '')}?text=${encodeURIComponent('Hola')}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 block truncate text-xs text-adm-brand-foreground/55 underline-offset-2 hover:text-adm-orange hover:underline">{client.telefono}</a>
         ) : <div className="mt-1 truncate text-xs text-adm-brand-foreground/55">Sin teléfono</div>}
       </div>
-      <div className="min-w-0">
-        <div className="text-xs text-adm-brand-foreground/50">Empresa</div>
+      <div className="order-1 col-span-2 min-w-0 md:order-none md:col-span-1">
+        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Empresa</div>
         <div className={`truncate text-sm ${client.empresa === '-' ? 'text-center' : ''}`}>{client.empresa || '—'}</div>
       </div>
-      <div className="min-w-0">
-        <div className="text-xs text-adm-brand-foreground/50">Producto</div>
+      <div className="order-2 col-span-2 min-w-0 md:order-none md:col-span-1">
+        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Producto</div>
         <div className={`truncate text-sm ${client.producto === '-' ? 'text-center' : ''}`}>{client.producto || '—'}</div>
       </div>
-      <div className="min-w-0">
-        <div className="text-xs text-adm-brand-foreground/50">Dominio</div>
+      <div className="order-4 col-span-4 min-w-0 md:order-none md:col-span-1">
+        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Dominio</div>
         <div className={`truncate text-sm ${client.dominio === '-' ? 'text-center' : ''}`}>{client.dominio || '—'}</div>
         <div className="mt-1 text-[11px] text-adm-brand-foreground/45">Vence: {formatDate(client.dominioVencimiento)}</div>
       </div>
-      <div className="min-w-0">
-        <div className="text-xs text-adm-brand-foreground/50">Servidor</div>
+      <div className="order-5 col-span-2 min-w-0 md:order-none md:col-span-1">
+        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Servidor</div>
         <div className={`truncate text-sm ${client.servidor === '-' ? 'text-center' : ''}`}>{client.servidor || '—'}</div>
       </div>
-      <div className="min-w-0 md:text-center">
+      <div className="hidden min-w-0 md:block md:text-center">
         <div className="text-xs text-adm-brand-foreground/50">Base de datos</div>
         <div className="truncate text-sm">{client.baseDatos || '—'}</div>
       </div>
-      <div className="min-w-0">
-        <div className="text-xs text-adm-brand-foreground/50">Plan</div>
+      <div className="order-3 col-span-2 min-w-0 md:order-none md:col-span-1">
+        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Plan</div>
         <div className="font-semibold text-adm-orange">{client.plan || '—'}</div>
       </div>
-      <div className="col-span-2 flex items-center gap-1 md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
+      <div className="absolute right-2 top-2 flex items-center gap-1 md:static md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
         <div className="mr-1 flex flex-col">
           <button type="button" aria-label="Mover cliente hacia arriba" disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
           <button type="button" aria-label="Mover cliente hacia abajo" disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
