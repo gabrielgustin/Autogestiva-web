@@ -7,7 +7,6 @@ import { Navbar } from "@/components/navbar"
 import { Logo } from "@/components/logo"
 import { Hero } from "@/components/home/hero"
 import { ProjectsGallery } from "@/components/home/projects-gallery"
-import { ProcessTimeline } from "@/components/home/process-timeline"
 import { ClientsScroller } from "@/components/home/clients-scroller"
 import { ChatPreview, type ChatField } from "@/components/home/chat-preview"
 import { ServicesGrid } from "@/components/home/services-grid"
@@ -18,7 +17,6 @@ import { CtaButton, Eyebrow, Reveal, WhatsAppIcon, scrollToSection, useOnScreen 
 import {
   contact,
   footerSolutions,
-  processSteps,
   techStack,
 } from "@/lib/site-data"
 
@@ -133,25 +131,6 @@ export default function HomePage() {
 
         {/* ── Números y curiosidades ───────────────────────────── */}
         <StatsSection />
-
-        {/* ── Process ──────────────────────────────────────────── */}
-        <section id="como-funciona" className="scroll-mt-20 py-24 md:py-32">
-          <div className={container}>
-            <Reveal className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-end">
-              <div className="lg:col-span-7">
-                <Eyebrow>Proceso</Eyebrow>
-                <SplitHeading className="font-display h-section mt-5 text-balance">
-                  De la idea al lanzamiento en 3 pasos
-                </SplitHeading>
-              </div>
-              <p className="text-lg text-muted-ink lg:col-span-5">
-                Un camino claro, de la primera charla hasta estar online.
-              </p>
-            </Reveal>
-
-            <ProcessTimeline steps={processSteps} />
-          </div>
-        </section>
 
         {/* ── Clients ──────────────────────────────────────────── */}
         <section id="clientes" className="scroll-mt-20 border-t border-line bg-paper-2 py-24 md:py-28">
