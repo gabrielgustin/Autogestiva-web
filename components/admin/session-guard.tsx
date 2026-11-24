@@ -65,7 +65,7 @@ export function LogoutButton({ className = '' }: { className?: string }) {
     <button
       type="button"
       onClick={endSession}
-      className={`inline-flex h-11 items-center gap-2 rounded-full border border-adm-brand-foreground/20 px-4 text-sm font-bold hover:bg-adm-brand-foreground/10 ${className}`}
+      className={`inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ink/30 hover:bg-paper ${className}`}
     >
       <LogOut className="size-4" aria-hidden="true" />
       Cerrar sesión

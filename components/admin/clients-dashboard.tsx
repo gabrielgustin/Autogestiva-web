@@ -2,54 +2,52 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogoutButton } from '@/components/admin/session-guard'
-import { ArrowLeft, CalendarClock, ChevronDown, ChevronUp, CircleDollarSign, Database, Download, Pencil, Plus, RefreshCw, Search, Server, Trash2, UserRound, X } from 'lucide-react'
-import Link from 'next/link'
-import { buildClientAlerts, describeDays } from '@/lib/admin/client-alerts'
+import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Download, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
+import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
+import { nextPaymentDate } from '@/lib/admin/payments'
+import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
 
 const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '' }
 const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual']
 const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
-const inputClass =
-  'h-11 w-full rounded-lg border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 px-3 text-sm text-adm-brand-foreground outline-none placeholder:text-adm-brand-foreground/40 focus:border-adm-orange'
 
-function nextPaymentDate(method: string, lastPayment: string) {
-  if (!lastPayment) return ''
-  const date = new Date(`${lastPayment}T12:00:00`)
-  if (method === 'Débito Automático') {
-    const next = new Date(date)
-    next.setMonth(next.getMonth() + (date.getDate() >= 10 ? 1 : 0), 10)
-    return next.toISOString().slice(0, 10)
-  }
-  const months = method === 'Pago semestral' ? 6 : method === 'Pago anual' ? 12 : 1
-  const day = date.getDate()
-  date.setDate(1)
-  date.setMonth(date.getMonth() + months)
-  date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()))
-  return date.toISOString().slice(0, 10)
-}
+// Secciones de la ficha: qué campos van juntos y cuáles son obligatorios.
+const formSections: { title: string; fields: (keyof ClientInput)[] }[] = [
+  { title: 'Contacto', fields: ['nombre', 'apellido', 'empresa', 'mail', 'telefono'] },
+  { title: 'Servicio', fields: ['producto', 'dominio', 'dominioVencimiento', 'servidor', 'baseDatos'] },
+  { title: 'Cobro', fields: ['plan', 'metodoPago', 'ultimoPago'] },
+]
+const requiredFields = new Set<keyof ClientInput>(['nombre', 'apellido', 'plan', 'metodoPago', 'ultimoPago'])
+
+// Fecha de hoy en hora local (AAAA-MM-DD); toISOString daría el día UTC.
+const todayIso = () => new Date().toLocaleDateString('sv-SE')
 
 function formatDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '—'
 }
 
+// Solo los campos editables: la API también manda `orden`, que no forma parte de la ficha ni de la huella.
 function toInput(client: SheetClient): ClientInput {
-  const { row: _row, ...input } = client
+  const input = {} as ClientInput
+  for (const key of Object.keys(emptyForm) as (keyof ClientInput)[]) input[key] = client[key] ?? ''
   return input
 }
+
+const clean = (value: string) => (value && value.trim() !== '-' ? value.trim() : '')
+const whatsappUrl = (phone: string) => `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent('Hola')}`
 
 type ClientEntry = { key: string; members: SheetClient[] }
 
 function normalizeText(value: string) {
-  return value.trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ')
+  return value.trim().toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ')
 }
 
 function buildEntries(list: SheetClient[]): ClientEntry[] {
   const entries = new Map<string, ClientEntry>()
   for (const client of list) {
-    const company = normalizeText(client.empresa)
+    const company = normalizeText(clean(client.empresa))
     const key = company ? `empresa:${company}` : `fila:${client.row}`
     const entry = entries.get(key)
     if (entry) entry.members.push(client)
@@ -58,14 +56,13 @@ function buildEntries(list: SheetClient[]): ClientEntry[] {
   return [...entries.values()]
 }
 
-function planAmount(plan: string) {
-  return Number.parseInt(plan.replace(/[^0-9]/g, ''), 10) || 0
-}
+const planAmount = (plan: string) => Number.parseInt(plan.replace(/[^0-9]/g, ''), 10) || 0
+const money = (value: number) => `$${value.toLocaleString('es-AR')}`
+const alertRow = (alert: ClientAlert) => alert.id.slice(alert.id.indexOf('-') + 1)
 
-function uniqueValues(values: string[]) {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
-}
+const ALERTS_PREVIEW = 6
 
+type Toast = { message: string; tone: 'ok' | 'error' }
 
 export function ClientsDashboard() {
   const router = useRouter()
@@ -79,11 +76,21 @@ export function ClientsDashboard() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [form, setForm] = useState<ClientInput>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [error, setError] = useState('')
-  const [hasScrolled, setHasScrolled] = useState(false)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const [busyRow, setBusyRow] = useState<string | null>(null)
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({})
   const [mpSubs, setMpSubs] = useState<Set<string> | null>(null)
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  const notify = useCallback((message: string, tone: Toast['tone'] = 'ok') => setToast({ message, tone }), [])
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 3500)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,47 +108,46 @@ export function ClientsDashboard() {
     }
   }, [router])
 
+  const loadMercadoPago = useCallback(() => {
+    // Pagos confirmados por Mercado Pago; si falla, los avisos quedan como estaban.
+    fetch('/api/administracion/mercadopago', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!d?.pagos) return; setMpPaid(d.pagos); setMpSubs(new Set(d.suscriptos)) })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     load()
-    // Pagos confirmados por Mercado Pago; si falla, los avisos quedan como estaban.
-    fetch('/api/administracion/mercadopago', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!d?.pagos) return; setMpPaid(d.pagos); setMpSubs(new Set(d.suscriptos)) }).catch(() => {})
-    const onScroll = () => setHasScrolled(window.scrollY > 24)
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [load])
+    loadMercadoPago()
+  }, [load, loadMercadoPago])
 
-  const plans = useMemo(() => [...new Set(clients.map((client) => client.plan).filter(Boolean))], [clients])
-  const servers = useMemo(() => [...new Set(clients.map((client) => client.servidor).filter(Boolean))], [clients])
-  const activeProducts = useMemo(() => clients.filter((client) => client.producto.trim() && client.producto.trim() !== '-').length, [clients])
-  const monthlyRevenue = useMemo(() => clients.reduce((total, client) => {
-    const monthlyAmount = Number.parseInt(client.plan.replace(/[^0-9]/g, ''), 10) || 0
-    return total + monthlyAmount
-  }, 0), [clients])
+  const refresh = () => { load(); loadMercadoPago() }
+
+  const plans = useMemo(() => [...new Set(clients.map((client) => clean(client.plan)).filter(Boolean))].sort((a, b) => planAmount(a) - planAmount(b)), [clients])
+  const servers = useMemo(() => [...new Set(clients.map((client) => clean(client.servidor)).filter(Boolean))].sort(), [clients])
+  const activeProducts = useMemo(() => clients.filter((client) => clean(client.producto)).length, [clients])
+  const monthlyRevenue = useMemo(() => clients.reduce((total, client) => total + planAmount(client.plan), 0), [clients])
   const nextExpiringDomain = useMemo(() => {
-    const today = new Date()
-    return clients
-      .filter((client) => client.dominioVencimiento)
-      .map((client) => ({
-        client,
-        date: new Date(`${client.dominioVencimiento}T12:00:00`),
-      }))
-      .filter(({ date }) => date >= today)
-      .sort((a, b) => a.date.getTime() - b.date.getTime())[0] ?? null
+    const today = todayIso()
+    return clients.filter((client) => client.dominioVencimiento && client.dominioVencimiento >= today).sort((a, b) => a.dominioVencimiento.localeCompare(b.dominioVencimiento))[0] ?? null
   }, [clients])
   const alerts = useMemo(() => buildClientAlerts(clients, new Date(), mpPaid), [clients, mpPaid])
-  const filtered = useMemo(
-    () =>
-      clients.filter((client) => {
-        const text = `${client.nombre} ${client.apellido} ${client.empresa} ${client.producto} ${client.dominio} ${client.mail} ${client.telefono}`.toLowerCase()
-        return text.includes(query.toLowerCase()) && (plan === 'all' || client.plan === plan) && (servidor === 'all' || client.servidor === servidor)
-      }),
-    [clients, plan, query, servidor],
-  )
+  const clientByRow = useMemo(() => new Map(clients.map((client) => [client.row, client])), [clients])
+  const filtered = useMemo(() => {
+    const needle = normalizeText(query)
+    return clients.filter((client) => {
+      const text = normalizeText(`${client.nombre} ${client.apellido} ${client.empresa} ${client.producto} ${client.dominio} ${client.mail} ${client.telefono}`)
+      return text.includes(needle) && (plan === 'all' || clean(client.plan) === plan) && (servidor === 'all' || clean(client.servidor) === servidor)
+    })
+  }, [clients, plan, query, servidor])
   const visibleEntries = useMemo(() => buildEntries(filtered), [filtered])
   const totalEntries = useMemo(() => buildEntries(clients).length, [clients])
-  const isSearching = query.trim() !== ''
+  const isFiltering = query.trim() !== '' || plan !== 'all' || servidor !== 'all'
   // Cliente con plan que todavía no tiene suscripción en Mercado Pago (solo si la consulta respondió).
-  const needsSubscription = (client: SheetClient) => !!mpSubs && !!client.plan.trim() && client.plan !== '-' && !mpSubs.has(client.empresa)
+  const needsSubscription = (client: SheetClient) => !!mpSubs && !!clean(client.plan) && !mpSubs.has(client.empresa)
+  const mpConfirmed = Object.keys(mpPaid).length
+  const unsubscribed = mpSubs ? new Set(clients.filter(needsSubscription).map((client) => clean(client.empresa) || client.row)).size : 0
+  const firstLoad = loading && clients.length === 0
 
   function toggleGroup(key: string) {
     setExpandedGroups((current) => {
@@ -155,15 +161,19 @@ export function ClientsDashboard() {
   function openNew() {
     setEditing(null)
     setForm({ ...emptyForm })
-    setError('')
+    setFormError('')
     setIsFormOpen(true)
   }
   function openEdit(client: SheetClient) {
+    setSelectedClient(null)
     setEditing(client)
     setForm(toInput(client))
-    setError('')
+    setFormError('')
     setIsFormOpen(true)
   }
+  const closeForm = useCallback(() => { setEditing(null); setIsFormOpen(false) }, [])
+  const closeDetails = useCallback(() => setSelectedClient(null), [])
+
   function update(field: keyof ClientInput, value: string) {
     setForm((current) => {
       const next = { ...current, [field]: value }
@@ -172,39 +182,55 @@ export function ClientsDashboard() {
     })
   }
 
+  async function send(method: 'POST' | 'PUT' | 'DELETE' | 'PATCH', body: unknown) {
+    const response = await fetch('/api/administracion/clients', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (response.status === 401) { router.replace('/administracion/login'); throw new Error('La sesión expiró') }
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error ?? 'No se pudo guardar')
+    return result
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault()
     setSaving(true)
-    setError('')
+    setFormError('')
     try {
-      const body = editing ? { ...form, row: editing.row, expected: fingerprint(toInput(editing)) } : form
-      const response = await fetch('/api/administracion/clients', {
-        method: editing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error ?? 'No se pudo guardar')
-      setEditing(null)
-      setIsFormOpen(false)
+      await send(editing ? 'PUT' : 'POST', editing ? { ...form, row: editing.row, expected: fingerprint(toInput(editing)) } : form)
+      notify(editing ? 'Cambios guardados' : 'Cliente creado')
+      closeForm()
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar')
+      setFormError(e instanceof Error ? e.message : 'No se pudo guardar')
     } finally {
       setSaving(false)
     }
   }
 
-  async function persistOrder(reordered: SheetClient[]) {
-    setClients(reordered)
-    const response = await fetch('/api/administracion/clients', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: reordered.map((item) => item.row) }),
-    })
-    if (!response.ok) {
-      setError((await response.json()).error ?? 'No se pudo guardar el orden')
+  async function markPaid(client: SheetClient) {
+    const today = todayIso()
+    const next = nextPaymentDate(client.metodoPago, today)
+    if (!window.confirm(`¿Registrar el pago de ${clean(client.empresa) || `${client.nombre} ${client.apellido}`} con fecha de hoy?${next ? ` El próximo pago queda para el ${formatDate(next)}.` : ''}`)) return
+    setBusyRow(client.row)
+    try {
+      await send('PUT', { ...toInput(client), ultimoPago: today, proximoPago: next, row: client.row, expected: fingerprint(toInput(client)) })
+      notify(`Pago registrado: ${clean(client.empresa) || client.nombre}`)
+      setSelectedClient(null)
       await load()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo registrar el pago', 'error')
+    } finally {
+      setBusyRow(null)
+    }
+  }
+
+  async function persistOrder(reordered: SheetClient[]) {
+    const previous = clients
+    setClients(reordered)
+    try {
+      await send('PATCH', { ids: reordered.map((item) => item.row) })
+    } catch (e) {
+      setClients(previous)
+      notify(e instanceof Error ? e.message : 'No se pudo guardar el orden', 'error')
     }
   }
 
@@ -232,267 +258,363 @@ export function ClientsDashboard() {
   }
 
   async function remove(client: SheetClient) {
-    if (!window.confirm(`¿Eliminar a ${client.nombre} ${client.apellido}?`)) return
-    const response = await fetch('/api/administracion/clients', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ row: client.row, expected: fingerprint(toInput(client)) }),
-    })
-    if (!response.ok) setError((await response.json()).error ?? 'No se pudo eliminar')
-    await load()
+    if (!window.confirm(`¿Eliminar a ${client.nombre} ${client.apellido}${clean(client.empresa) ? ` (${client.empresa})` : ''}? No se puede deshacer.`)) return
+    setBusyRow(client.row)
+    try {
+      await send('DELETE', { row: client.row, expected: fingerprint(toInput(client)) })
+      notify('Cliente eliminado')
+      setSelectedClient(null)
+      await load()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo eliminar', 'error')
+    } finally {
+      setBusyRow(null)
+    }
   }
 
+  const rowProps = (client: SheetClient) => ({
+    client,
+    busy: busyRow === client.row,
+    unsubscribed: needsSubscription(client),
+    paidByMp: mpPaid[client.empresa] ?? '',
+    onOpen: () => setSelectedClient(client),
+    onEdit: () => openEdit(client),
+    onDelete: () => remove(client),
+  })
+
   return (
-    <main
-      className="min-h-screen overflow-x-hidden bg-adm-brand text-adm-brand-foreground"
-      style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px)', backgroundSize: '42px 42px' }}
-    >
-      <header className="border-b border-adm-brand-foreground/10 bg-adm-brand/85">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5 md:px-10">
-<div className="flex items-center">
-  <Link href="/administracion" className="inline-flex items-center gap-2 text-xs font-semibold text-adm-brand-foreground/60 hover:text-adm-orange">
-              <ArrowLeft className="size-4" />
-              Panel de infraestructura
-            </Link>
+    <AdminShell>
+      <PageHeader eyebrow="Cartera" title="Clientes" description="Servicios contratados, dominios y cobros de cada cliente.">
+        <button type="button" onClick={refresh} disabled={loading} className={btn.secondary}>
+          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          {loading ? 'Actualizando' : 'Actualizar'}
+        </button>
+        <a href="/api/administracion/clients/export" download className={btn.secondary}>
+          <Download className="size-4" aria-hidden="true" />
+          Exportar CSV
+        </a>
+        <button type="button" onClick={openNew} className={btn.accent}>
+          <Plus className="size-4" aria-hidden="true" />
+          Nuevo cliente
+        </button>
+      </PageHeader>
+
+      {error && (
+        <div role="alert" className="mb-6 flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          <button type="button" onClick={load} className={btn.secondary}>Reintentar</button>
+        </div>
+      )}
+
+      <section className="mb-6 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4" aria-label="Resumen">
+        <Stat label="Clientes" value={firstLoad ? '—' : totalEntries} detail={`${clients.length} servicios cargados`} icon={<UserRound />} />
+        <Stat label="Productos activos" value={firstLoad ? '—' : activeProducts} icon={<Layers />} />
+        <Stat label="Recaudación mensual" value={firstLoad ? '—' : money(monthlyRevenue)} detail="Suma de los planes" icon={<CircleDollarSign />} />
+        <Stat
+          label="Próximo dominio"
+          value={<span className="block truncate">{nextExpiringDomain ? clean(nextExpiringDomain.empresa) || nextExpiringDomain.dominio : '—'}</span>}
+          detail={nextExpiringDomain ? `Vence el ${formatDate(nextExpiringDomain.dominioVencimiento)}` : 'Sin fechas cargadas'}
+          icon={<CalendarClock />}
+        />
+      </section>
+
+      {!firstLoad && (alerts.length > 0 || mpSubs) && (
+        <section aria-label="Para atender" className={`${card} mb-6 overflow-hidden`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 md:px-5">
+            <h2 className="font-display text-lg font-bold tracking-tight">
+              Para atender <span className="text-muted-ink">· {alerts.length}</span>
+            </h2>
+            {mpSubs && (
+              <div className="flex flex-wrap gap-1.5">
+                <Badge tone="green"><Check className="size-3" aria-hidden="true" />{mpConfirmed} al día por Mercado Pago</Badge>
+                {unsubscribed > 0 && <Badge tone="amber">{unsubscribed} sin suscribir</Badge>}
+              </div>
+            )}
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <button onClick={load} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} disabled={loading} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 px-3' : 'px-3 sm:px-5'} inline-flex h-8 items-center justify-center gap-2 rounded-full bg-adm-orange text-xs sm:h-10 sm:text-sm font-semibold text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`}>
-              <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-              <span className={hasScrolled ? 'sr-only' : ''}>Actualizar</span>
+          {alerts.length === 0 ? (
+            <EmptyState>No hay pagos ni dominios por vencer. Todo al día.</EmptyState>
+          ) : (
+            <ul className="grid gap-px bg-line md:grid-cols-2">
+              {(showAllAlerts ? alerts : alerts.slice(0, ALERTS_PREVIEW)).map((alert) => (
+                <AlertItem
+                  key={alert.id}
+                  alert={alert}
+                  client={clientByRow.get(alertRow(alert))}
+                  unsubscribed={alert.type === 'pago' && !!mpSubs && !mpSubs.has(alert.cliente)}
+                  busy={busyRow === alertRow(alert)}
+                  onPaid={markPaid}
+                  onOpen={setSelectedClient}
+                />
+              ))}
+              {(showAllAlerts ? alerts.length : Math.min(alerts.length, ALERTS_PREVIEW)) % 2 === 1 && <li className="hidden bg-white md:block" aria-hidden="true" />}
+            </ul>
+          )}
+          {alerts.length > ALERTS_PREVIEW && (
+            <button type="button" onClick={() => setShowAllAlerts((v) => !v)} className="w-full border-t border-line px-4 py-2.5 text-sm font-semibold text-brand hover:bg-paper/60">
+              {showAllAlerts ? 'Mostrar menos' : `Ver los ${alerts.length} avisos`}
             </button>
-            <a href="/api/administracion/clients/export" download className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-adm-brand-foreground/20 px-3 text-xs font-bold hover:bg-adm-brand-foreground/10 sm:h-10 sm:px-4 sm:text-sm"><Download className="size-4" aria-hidden="true" />Exportar CSV</a>
-            <LogoutButton className="!h-8 !gap-1.5 !px-3 !text-xs sm:!h-10 sm:!px-4 sm:!text-sm" />
+          )}
+        </section>
+      )}
+
+      <section className={`${card} overflow-hidden`} aria-label="Lista de clientes">
+        <div className="flex flex-col gap-2 border-b border-line p-3 md:flex-row md:items-center md:p-4">
+          <label className="relative flex-1">
+            <span className="sr-only">Buscar clientes</span>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink/40" aria-hidden="true" />
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, empresa, dominio o teléfono" className={`${inputClass} pl-10`} />
+          </label>
+          <div className="grid grid-cols-2 gap-2 md:flex">
+            <SelectFilter value={servidor} onChange={setServidor} allLabel="Todos los servidores" options={servers} />
+            <SelectFilter value={plan} onChange={setPlan} allLabel="Todos los planes" options={plans} />
           </div>
         </div>
-      </header>
 
-      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-4 sm:py-8 md:px-10">
-        <>
-            <section className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-              <Stat label="Clientes totales" value={totalEntries} icon={<UserRound />} />
-              <Stat label="Productos activos" value={activeProducts} icon={<CircleDollarSign />} />
-              <Stat label="Recaudación mensual estimada" value={`$${Math.round(monthlyRevenue).toLocaleString('es-AR')}`} icon={<CircleDollarSign />} />
-              <Stat
-                label="Próximo dominio a vencer"
-                value={
-                  <>
-                    <span className="block truncate">{nextExpiringDomain?.client.empresa || 'Sin empresa'}</span>
-                    <span className="mt-1 block text-sm font-medium text-adm-brand-foreground/50">
-                      {nextExpiringDomain ? nextExpiringDomain.date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Sin fecha registrada'}
-                    </span>
-                  </>
-                }
-                icon={<CalendarClock />}
-              />
-            </section>
-            {alerts.length > 0 && (
-              <section aria-label="Vencimientos próximos" className="mb-6 rounded-xl border border-adm-orange/50 bg-adm-orange/15 p-5">
-                <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Vencimientos · {alerts.length} {alerts.length === 1 ? 'aviso' : 'avisos'}</div>
-                <ul className="mt-3 grid gap-2 text-sm md:grid-cols-2">
-                  {alerts.map((alert) => (
-                    <li key={alert.id} className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-adm-brand-foreground/10 bg-adm-brand/40 px-3 py-2">
-                      <span className="min-w-0"><span className="font-semibold">{alert.cliente}</span>{alert.type === 'pago' && mpSubs && !mpSubs.has(alert.cliente) && <span className="ml-2 rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-bold text-black">Falta suscribir</span>}<span className="block text-xs text-adm-brand-foreground/60 sm:truncate">{alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}</span></span>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${alert.days < 0 ? 'bg-red-500/80 text-white' : 'bg-adm-orange text-adm-orange-foreground'}`}>{describeDays(alert.days)}</span>
-                    </li>
+        <div className={`hidden border-b border-line bg-paper/60 px-5 py-2.5 ${rowGrid}`}>
+          {['Cliente', 'Empresa y producto', 'Dominio', 'Servidor', 'Plan'].map((label) => (
+            <div key={label} className="eyebrow text-[10px] text-muted-ink">{label}</div>
+          ))}
+          <div />
+        </div>
+
+        <div className="divide-y divide-line">
+          {firstLoad ? (
+            <div className="space-y-px">{[1, 2, 3, 4].map((i) => <div key={i} className="h-20 animate-pulse bg-paper/70" />)}</div>
+          ) : filtered.length === 0 ? (
+            <EmptyState>
+              {isFiltering ? 'Ningún cliente coincide con la búsqueda.' : 'Todavía no hay clientes. Creá el primero con “Nuevo cliente”.'}
+              {isFiltering && (
+                <button type="button" onClick={() => { setQuery(''); setPlan('all'); setServidor('all') }} className={`${btn.secondary} mx-auto mt-4 flex`}>Limpiar filtros</button>
+              )}
+            </EmptyState>
+          ) : (
+            visibleEntries.map((entry, entryIndex) => {
+              const order = { canMoveUp: entryIndex > 0, canMoveDown: entryIndex < visibleEntries.length - 1, onMoveUp: () => moveEntry(entry.key, -1), onMoveDown: () => moveEntry(entry.key, 1) }
+              if (entry.members.length === 1) return <ClientRow key={entry.key} {...rowProps(entry.members[0])} {...order} />
+              return (
+                <GroupRow key={entry.key} entry={entry} unsubscribed={needsSubscription(entry.members[0])} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} {...order}>
+                  {entry.members.map((client, memberIndex) => (
+                    <ClientRow
+                      key={client.row}
+                      {...rowProps(client)}
+                      nested
+                      canMoveUp={memberIndex > 0}
+                      canMoveDown={memberIndex < entry.members.length - 1}
+                      onMoveUp={() => moveWithinGroup(entry, client, -1)}
+                      onMoveDown={() => moveWithinGroup(entry, client, 1)}
+                    />
                   ))}
-                </ul>
-              </section>
-            )}
-            {Object.keys(mpPaid).length > 0 && <p className="mb-4 text-xs text-adm-brand-foreground/55">Mercado Pago confirma el último cobro de {Object.keys(mpPaid).length} clientes: {Object.entries(mpPaid).map(([empresa, day]) => `${empresa} (${formatDate(day)})`).join(' · ')}</p>}
-            {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
-            <section className="overflow-hidden rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10">
-              <div className="flex flex-col gap-3 border-b border-adm-brand-foreground/10 p-3 sm:p-4 md:flex-row">
-                <label className="relative flex-1">
-                  <span className="sr-only">Buscar clientes</span>
-                  <Search className="absolute left-3 top-3 size-4 text-adm-brand-foreground/45" />
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, mail o teléfono" className={`${inputClass} pl-10`} />
-                </label>
-                <SelectFilter value={servidor} onChange={setServidor} allLabel="Todos los servidores" options={servers} />
-                <SelectFilter value={plan} onChange={setPlan} allLabel="Todos los planes" options={plans} />
-                <button onClick={openNew} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-adm-orange px-5 text-sm font-bold text-adm-orange-foreground disabled:opacity-50">
-                  <Plus className="size-4" />
-                  Nuevo cliente
-                </button>
-              </div>
-              <div className="hidden border-b border-adm-brand-foreground/10 px-5 py-3 text-xs font-semibold text-adm-brand-foreground/50 md:grid md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] md:items-center md:gap-4">
-                <div>Cliente</div>
-                <div>Empresa</div>
-                <div>Producto</div>
-                <div>Dominio</div>
-                <div>Servidor</div>
-                <div>Base de datos</div>
-                <div className="leading-4">Plan</div>
-                <div />
-              </div>
-              <div className="divide-y divide-adm-brand-foreground/10">
-                {loading && clients.length === 0 ? (
-                  <div className="p-12 text-center text-sm text-adm-brand-foreground/60">Cargando clientes…</div>
-                ) : filtered.length === 0 ? (
-                  <div className="p-12 text-center text-sm text-adm-brand-foreground/60">No hay clientes para mostrar. Creá uno con “Nuevo cliente”.</div>
-                ) : (
-                  visibleEntries.map((entry, entryIndex) => {
-                    const canMoveUp = entryIndex > 0
-                    const canMoveDown = entryIndex < visibleEntries.length - 1
-                    if (entry.members.length === 1) {
-                      const client = entry.members[0]
-                      return <ClientRow key={entry.key} unsubscribed={needsSubscription(client)} client={client} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
-                    }
-                    return (
-                      <GroupRow key={entry.key} unsubscribed={needsSubscription(entry.members[0])} entry={entry} expanded={isSearching || expandedGroups.has(entry.key)} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onToggle={() => toggleGroup(entry.key)} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)}>
-                        {entry.members.map((client, memberIndex) => (
-                          <ClientRow key={client.row} unsubscribed={needsSubscription(client)} client={client} canMoveUp={memberIndex > 0} canMoveDown={memberIndex < entry.members.length - 1} onMoveUp={() => moveWithinGroup(entry, client, -1)} onMoveDown={() => moveWithinGroup(entry, client, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
-                        ))}
-                      </GroupRow>
-                    )
-                  })
-                )}
-              </div>
-            </section>
-        </>
-      </div>
+                </GroupRow>
+              )
+            })
+          )}
+        </div>
+        {!firstLoad && filtered.length > 0 && (
+          <div className="border-t border-line bg-paper/60 px-5 py-2.5 text-xs text-muted-ink">
+            {isFiltering ? `${filtered.length} de ${clients.length} servicios` : `${clients.length} servicios · ${totalEntries} clientes`}
+          </div>
+        )}
+      </section>
 
       {selectedClient && (
-        <ClientDetails client={selectedClient} onClose={() => setSelectedClient(null)} />
+        <ClientDetails
+          client={selectedClient}
+          busy={busyRow === selectedClient.row}
+          unsubscribed={needsSubscription(selectedClient)}
+          paidByMp={mpPaid[selectedClient.empresa] ?? ''}
+          onClose={closeDetails}
+          onEdit={() => openEdit(selectedClient)}
+          onPaid={() => markPaid(selectedClient)}
+          onDelete={() => remove(selectedClient)}
+        />
       )}
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 p-2 sm:p-4 md:p-10">
-          <form onSubmit={save} className="w-full max-w-2xl rounded-2xl border border-adm-brand-foreground/15 bg-adm-brand p-4 shadow-2xl sm:p-6">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Ficha de cliente</div>
-                <h2 className="mt-1 text-2xl font-bold">{editing ? 'Editar cliente' : 'Nuevo cliente'}</h2>
-              </div>
-              <button type="button" aria-label="Cerrar" onClick={() => { setEditing(null); setIsFormOpen(false) }} className="rounded-full p-2 text-adm-brand-foreground/60 hover:bg-adm-brand-foreground/10">
-                <X className="size-5" />
-              </button>
+        <Modal
+          eyebrow="Ficha de cliente"
+          title={editing ? `Editar a ${editing.nombre} ${editing.apellido}` : 'Nuevo cliente'}
+          onClose={closeForm}
+          footer={
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <button type="button" onClick={closeForm} className={btn.secondary}>Cancelar</button>
+              <button type="submit" form="client-form" disabled={saving} className={btn.primary}>{saving ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear cliente'}</button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {(Object.keys(emptyForm) as (keyof ClientInput)[]).filter((field) => field !== 'proximoPago').map((field) => (
-                <label key={field} className="text-xs font-semibold text-adm-brand-foreground/65">
-                  {field === 'ultimoPago' ? 'Fecha del pago' : COLUMN_LABELS[field]}
-                  {field === 'plan' || field === 'metodoPago' ? (
-                    <div className="relative mt-2">
-                      <select
-                        required
-                        value={form[field]}
-                        onChange={(e) => update(field, e.target.value)}
-                        className={`${inputClass} appearance-none pr-10`}
-                      >
-                        <option value="">Seleccioná {field === 'plan' ? 'un plan' : 'un método'}</option>
-                        {(field === 'plan' ? planOptions : paymentOptions).map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-adm-brand-foreground/70" aria-hidden="true" />
+          }
+        >
+          <form id="client-form" onSubmit={save} className="space-y-6">
+            {formSections.map((section) => (
+              <fieldset key={section.title}>
+                <legend className="eyebrow mb-3 text-[10px] text-muted-ink">{section.title}</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {section.fields.map((field) => (
+                    <label key={field} className="text-xs font-semibold text-ink/70">
+                      {field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]}
+                      {requiredFields.has(field) && <span className="text-orange-600"> *</span>}
+                      {field === 'plan' || field === 'metodoPago' ? (
+                        <div className="relative mt-1.5">
+                          <select required value={form[field]} onChange={(e) => update(field, e.target.value)} className={`${inputClass} appearance-none pr-10`}>
+                            <option value="">Elegí {field === 'plan' ? 'un plan' : 'un método'}</option>
+                            {/* Si el valor guardado no está en la lista, se conserva para no perderlo al editar. */}
+                            {[...new Set([...(field === 'plan' ? planOptions : paymentOptions), ...(form[field] ? [form[field]] : [])])].map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
+                        </div>
+                      ) : (
+                        <input
+                          required={requiredFields.has(field)}
+                          type={field === 'mail' ? 'email' : field === 'telefono' ? 'tel' : ['dominioVencimiento', 'ultimoPago'].includes(field) ? 'date' : 'text'}
+                          autoComplete="off"
+                          value={form[field]}
+                          onChange={(e) => update(field, e.target.value)}
+                          className={`${inputClass} mt-1.5`}
+                        />
+                      )}
+                    </label>
+                  ))}
+                  {section.title === 'Cobro' && (
+                    <div className="text-xs font-semibold text-ink/70">
+                      Próximo pago
+                      <div className="mt-1.5 flex h-11 items-center rounded-xl border border-dashed border-line bg-paper px-3 text-sm font-normal text-ink">
+                        {form.proximoPago ? formatDate(form.proximoPago) : <span className="text-ink/40">Se calcula con el método y la fecha</span>}
+                      </div>
                     </div>
-                  ) : (
-                    <input
-                      required={field === 'nombre' || field === 'apellido' || field === 'ultimoPago'}
-                      type={field === 'mail' ? 'email' : ['dominioVencimiento', 'ultimoPago'].includes(field) ? 'date' : 'text'}
-                      value={form[field]}
-                      onChange={(e) => update(field, e.target.value)}
-                      className={`${inputClass} mt-2`}
-                    />
                   )}
-                </label>
-              ))}
-            </div>
-            {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
-            <button disabled={saving} className="mt-6 h-11 w-full rounded-full bg-adm-orange text-sm font-bold text-adm-orange-foreground disabled:opacity-60">
-              {saving ? 'Guardando…' : 'Guardar cliente'}
-            </button>
+                </div>
+              </fieldset>
+            ))}
+            {formError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
           </form>
+        </Modal>
+      )}
+
+      {toast && (
+        <div role="status" className={`fixed inset-x-4 bottom-4 z-[70] mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-[0_20px_50px_-20px_rgba(11,19,34,0.5)] sm:inset-x-auto sm:right-6 ${toast.tone === 'ok' ? 'bg-ink' : 'bg-red-600'}`}>
+          {toast.message}
         </div>
       )}
-    </main>
+    </AdminShell>
   )
 }
 
 function SelectFilter({ value, onChange, allLabel, options }: { value: string; onChange: (value: string) => void; allLabel: string; options: string[] }) {
   return (
-    <div className="relative w-full md:w-52">
-      <select aria-label={allLabel} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} appearance-none pr-10`}>
+    <div className="relative min-w-0 md:w-52">
+      <select aria-label={allLabel} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} appearance-none truncate pr-9`}>
         <option value="all">{allLabel}</option>
         {options.map((item) => <option key={item}>{item}</option>)}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-adm-brand-foreground/70" aria-hidden="true" />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
     </div>
   )
 }
 
-function Stat({ label, value, icon }: { label: string; value: React.ReactNode; icon: React.ReactNode }) {
+function AlertItem({ alert, client, unsubscribed, busy, onPaid, onOpen }: { alert: ClientAlert; client?: SheetClient; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {
   return (
-    <div className="rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 p-4 sm:p-5">
-      <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-adm-orange text-adm-orange-foreground">{icon}</div>
-      <div className="text-xs text-adm-brand-foreground/65 sm:text-sm">{label}</div>
-      <div className="mt-1 text-xl font-black sm:text-3xl">{value}</div>
+    <li className="flex items-center justify-between gap-3 bg-white px-4 py-3 md:px-5">
+      <button type="button" onClick={() => client && onOpen(client)} className="min-w-0 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <span className="font-semibold">{alert.cliente}</span>
+          <Badge tone={alert.days < 0 ? 'red' : 'orange'}>{describeDays(alert.days)}</Badge>
+          {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
+        </span>
+        <span className="mt-0.5 block text-xs text-muted-ink">
+          {alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}
+        </span>
+      </button>
+      {alert.type === 'pago' && client && (
+        <button type="button" disabled={busy} onClick={() => onPaid(client)} className={`${btn.secondary} h-9 shrink-0 px-3 text-xs`} aria-label={`Registrar pago de ${alert.cliente}`}>
+          <Check className="size-3.5" aria-hidden="true" />
+          {busy ? 'Guardando' : 'Pagó'}
+        </button>
+      )}
+    </li>
+  )
+}
+
+const rowGrid = 'md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_7.5rem] md:items-center md:gap-4'
+
+function OrderButtons({ label, canMoveUp, canMoveDown, onMoveUp, onMoveDown }: { label: string; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void }) {
+  return (
+    <div className="flex flex-col">
+      <button type="button" aria-label={`Subir ${label}`} disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-0.5 text-ink/40 hover:bg-paper hover:text-ink disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
+      <button type="button" aria-label={`Bajar ${label}`} disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-0.5 text-ink/40 hover:bg-paper hover:text-ink disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
     </div>
   )
 }
 
-function ClientDetails({ client, onClose }: { client: SheetClient; onClose: () => void }) {
-  const details = [
-    ['Nombre', `${client.nombre} ${client.apellido}`],
-    ['Empresa', client.empresa],
-    ['Producto', client.producto],
-    ['Dominio', client.dominio],
-    ['Vencimiento del dominio', formatDate(client.dominioVencimiento)],
-    ['Mail', client.mail],
-    ['Teléfono', client.telefono],
-    ['Servidor', client.servidor],
-    ['Base de datos', client.baseDatos],
-    ['Plan', client.plan],
-    ['Método de pago', client.metodoPago],
-    ['Último pago', formatDate(client.ultimoPago)],
-    ['Próximo pago', formatDate(client.proximoPago)],
-  ]
+type RowProps = {
+  client: SheetClient
+  busy: boolean
+  unsubscribed: boolean
+  paidByMp: string
+  nested?: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onOpen: () => void
+  onEdit: () => void
+  onDelete: () => void
+}
 
+function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpen, onEdit, onDelete }: RowProps) {
+  const name = `${client.nombre} ${client.apellido}`
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-adm-brand/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="client-details-title" className="w-full max-w-2xl rounded-2xl border border-adm-brand-foreground/15 bg-adm-brand p-5 shadow-2xl sm:p-7">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Detalle del cliente</div>
-            <h2 id="client-details-title" className="mt-1 text-2xl font-bold text-balance">{client.nombre} {client.apellido}</h2>
-          </div>
-          <button type="button" aria-label="Cerrar detalle" onClick={onClose} className="rounded-full p-2 text-adm-brand-foreground/60 hover:bg-adm-brand-foreground/10">
-            <X className="size-5" />
-          </button>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpen() } }}
+      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${nested ? 'bg-paper/40 md:pl-9' : ''} ${busy ? 'opacity-60' : ''} ${rowGrid}`}
+    >
+      <div className="min-w-0 pr-28 md:pr-0">
+        <div className="truncate font-semibold">{name}</div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          {clean(client.telefono) ? (
+            <a href={whatsappUrl(client.telefono)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="text-xs text-muted-ink underline-offset-2 hover:text-brand hover:underline">{client.telefono}</a>
+          ) : <span className="text-xs text-ink/40">Sin teléfono</span>}
+          {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
+          {paidByMp && <Badge tone="green">MP al día</Badge>}
         </div>
-        <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-          {details.map(([label, value]) => (
-            <div key={label} className="min-w-0 rounded-xl border border-adm-brand-foreground/10 bg-adm-brand-foreground/5 p-3">
-              <dt className="text-xs font-semibold text-adm-brand-foreground/50">{label}</dt>
-              <dd className="mt-1 truncate text-sm font-medium">{value || '—'}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 md:contents">
+        <Cell label="Empresa" className="order-1 md:hidden">{clean(client.empresa) || '—'}</Cell>
+        <Cell label="Producto" className="order-3 md:hidden">{clean(client.producto) || '—'}</Cell>
+        <div className="hidden min-w-0 md:block">
+          <div className="truncate text-sm font-medium">{clean(client.empresa) || '—'}</div>
+          <div className="truncate text-xs text-muted-ink">{clean(client.producto) || '—'}</div>
+        </div>
+        <Cell label="Dominio" className="order-5 col-span-2 md:order-none md:col-span-1" extra={client.dominioVencimiento ? `Vence ${formatDate(client.dominioVencimiento)}` : ''}>{clean(client.dominio) || '—'}</Cell>
+        <Cell label="Servidor" className="order-4 md:order-none" extra={clean(client.baseDatos) ? `Base: ${client.baseDatos}` : ''}>{clean(client.servidor) || '—'}</Cell>
+        <Cell label="Plan" className="order-2 md:order-none" extra={client.proximoPago ? `Próx. ${formatDate(client.proximoPago)}` : ''} strong>{clean(client.plan) || '—'}</Cell>
+      </div>
+
+      <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
+        <OrderButtons label={name} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+        <button type="button" onClick={onEdit} className={btn.icon} aria-label={`Editar a ${name}`}><Pencil className="size-3.5" /></button>
+        <button type="button" onClick={onDelete} disabled={busy} className={btn.danger} aria-label={`Eliminar a ${name}`}><Trash2 className="size-3.5" /></button>
+      </div>
     </div>
   )
 }
 
-const feminineNames = new Set(['ana', 'beatriz', 'camila', 'carla', 'carmen', 'clara', 'daniela', 'elena', 'emilia', 'florencia', 'gabriela', 'ines', 'isabel', 'josefina', 'julieta', 'laura', 'lucia', 'luisa', 'marcela', 'maria', 'mariana', 'martina', 'maria', 'monica', 'natalia', 'noelia', 'patricia', 'paula', 'romina', 'rosa', 'sofia', 'valentina', 'veronica'])
-
-function clientLabel(nombre: string) {
-  return feminineNames.has(normalizeText(nombre)) ? 'Clienta' : 'Cliente'
+function Cell({ label, children, extra, strong, className = '' }: { label: string; children: React.ReactNode; extra?: string; strong?: boolean; className?: string }) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-ink/40 md:hidden">{label}</div>
+      <div className={`truncate text-sm ${strong ? 'font-semibold text-brand' : ''}`}>{children}</div>
+      {extra && <div className="truncate text-[11px] text-muted-ink">{extra}</div>}
+    </div>
+  )
 }
 
-const rowGridClass = 'relative grid grid-cols-2 items-start gap-x-3 gap-y-2 p-3 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] [&>*]:self-start'
-
-function summarize(values: string[], plural: string) {
-  if (values.length === 0) return '—'
-  return values.length === 1 ? values[0] : `${values.length} ${plural}`
-}
-
-function GroupRow({ unsubscribed, entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp, onMoveDown, children }: { unsubscribed: boolean; entry: ClientEntry; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
+function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp, onMoveDown, children }: { entry: ClientEntry; unsubscribed: boolean; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
   const { members } = entry
-  const names = uniqueValues(members.map((member) => `${member.nombre} ${member.apellido}`))
-  const products = uniqueValues(members.map((member) => member.producto))
-  const domains = uniqueValues(members.map((member) => member.dominio))
-  const servers = uniqueValues(members.map((member) => member.servidor))
-  const databases = uniqueValues(members.map((member) => member.baseDatos))
+  const names = [...new Set(members.map((member) => `${member.nombre} ${member.apellido}`))]
+  const products = [...new Set(members.map((member) => clean(member.producto)).filter(Boolean))]
   const totalPlan = members.reduce((total, member) => total + planAmount(member.plan), 0)
-
+  const company = members[0].empresa
   return (
     <div>
       <div
@@ -500,98 +622,74 @@ function GroupRow({ unsubscribed, entry, expanded, canMoveUp, canMoveDown, onTog
         tabIndex={0}
         aria-expanded={expanded}
         onClick={onToggle}
-        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggle() } }}
-        className={`${rowGridClass} cursor-pointer border-l-2 ${expanded ? 'border-adm-orange/50' : 'border-transparent'} transition-colors hover:bg-adm-brand-foreground/5 focus:outline-none focus:ring-2 focus:ring-adm-orange/60 md:items-start`}
+        onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onToggle() } }}
+        className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${rowGrid}`}
       >
-        <div className="col-span-2 min-w-0 pr-28 md:col-span-1 md:pr-0">
-          <div className="hidden text-xs text-adm-brand-foreground/50 md:block">{names.length > 1 ? 'Clientes' : clientLabel(members[0].nombre)}</div>
-          <div className="truncate font-bold" title={names.join(', ')}>{names.join(', ') || '—'}</div>
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs text-adm-brand-foreground/50">Empresa</div>
-          <div className="truncate text-sm font-semibold">{members[0].empresa}</div>
-          <div className="mt-1 text-[11px] text-adm-orange">{members.length} servicios{unsubscribed && <SubscribeBadge />}</div>
-        </div>
-        <div className="hidden min-w-0 md:block" aria-hidden="true" />
-        <div className="hidden min-w-0 md:block" aria-hidden="true" />
-        <div className="hidden min-w-0 md:block" aria-hidden="true" />
-        <div className="hidden min-w-0 md:block" aria-hidden="true" />
-        <div className="min-w-0 self-start">
-          <div className="min-h-4 text-xs leading-4 text-adm-brand-foreground/50">Plan (total)</div>
-          <div className="font-semibold leading-6 text-adm-orange">{totalPlan ? `$${totalPlan.toLocaleString('es-AR')}` : '—'}</div>
-        </div>
-        <div className="absolute right-2 top-2 flex items-center gap-1 md:static md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
-          <div className="mr-1 flex flex-col">
-            <button type="button" aria-label={`Mover ${members[0].empresa} hacia arriba`} disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
-            <button type="button" aria-label={`Mover ${members[0].empresa} hacia abajo`} disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
+        <div className="min-w-0 pr-28 md:pr-0">
+          <div className="truncate font-semibold" title={names.join(', ')}>{names.join(', ')}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <Badge tone="blue">{members.length} servicios</Badge>
+            {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
           </div>
-          <button type="button" onClick={onToggle} aria-label={expanded ? `Contraer ${members[0].empresa}` : `Expandir ${members[0].empresa}`} className="rounded-lg border border-adm-brand-foreground/15 p-2 text-adm-brand-foreground/70 hover:bg-adm-brand-foreground/10">
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-x-3 md:contents">
+          <Cell label="Empresa" extra={products.join(' · ')}>{company}</Cell>
+          <div className="hidden md:block" />
+          <div className="hidden md:block" />
+          <Cell label="Plan total" strong>{totalPlan ? money(totalPlan) : '—'}</Cell>
+        </div>
+        <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
+          <OrderButtons label={company} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+          <button type="button" onClick={onToggle} aria-label={expanded ? `Contraer ${company}` : `Ver servicios de ${company}`} className={btn.icon}>
             <ChevronDown className={`size-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>
-      {expanded && <div className="divide-y divide-adm-brand-foreground/10 border-l-2 border-t border-adm-orange/50 border-t-adm-brand-foreground/10 bg-adm-brand/40">{children}</div>}
+      {expanded && <div className="divide-y divide-line border-t border-line">{children}</div>}
     </div>
   )
 }
 
-function ClientRow({ unsubscribed, client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpen, onEdit, onDelete }: { unsubscribed: boolean; client: SheetClient; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onPaid, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onPaid: () => void; onDelete: () => void }) {
+  const groups: { title: string; items: [string, string][] }[] = [
+    { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
+    { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
+    { title: 'Cobro', items: [['Plan', clean(client.plan)], ['Método de pago', clean(client.metodoPago)], ['Último pago', formatDate(client.ultimoPago)], ['Próximo pago', formatDate(client.proximoPago)]] },
+  ]
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
-      className="relative grid cursor-pointer grid-cols-6 items-start gap-x-3 gap-y-2 p-3 transition-colors hover:bg-adm-brand-foreground/5 focus:outline-none focus:ring-2 focus:ring-adm-orange/60 sm:gap-4 sm:p-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_8rem] md:items-start"
-    >
-      <div className="col-span-6 min-w-0 pr-28 md:col-span-1 md:pr-0">
-        <div className="hidden text-xs text-adm-brand-foreground/50 md:block">{clientLabel(client.nombre)}</div>
-        <div className="font-bold">{client.nombre} {client.apellido}{unsubscribed && <SubscribeBadge />}</div>
-        {client.telefono ? (
-          <a href={`https://wa.me/${client.telefono.replace(/\D/g, '')}?text=${encodeURIComponent('Hola')}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 block truncate text-xs text-adm-brand-foreground/55 underline-offset-2 hover:text-adm-orange hover:underline">{client.telefono}</a>
-        ) : <div className="mt-1 truncate text-xs text-adm-brand-foreground/55">Sin teléfono</div>}
-      </div>
-      <div className="order-1 col-span-2 min-w-0 md:order-none md:col-span-1">
-        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Empresa</div>
-        <div className={`truncate text-sm ${client.empresa === '-' ? 'text-center' : ''}`}>{client.empresa || '—'}</div>
-      </div>
-      <div className="order-2 col-span-2 min-w-0 md:order-none md:col-span-1">
-        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Producto</div>
-        <div className={`truncate text-sm ${client.producto === '-' ? 'text-center' : ''}`}>{client.producto || '—'}</div>
-      </div>
-      <div className="order-4 col-span-4 min-w-0 md:order-none md:col-span-1">
-        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Dominio</div>
-        <div className={`truncate text-sm ${client.dominio === '-' ? 'text-center' : ''}`}>{client.dominio || '—'}</div>
-        <div className="mt-1 text-[11px] text-adm-brand-foreground/45">Vence: {formatDate(client.dominioVencimiento)}</div>
-      </div>
-      <div className="order-5 col-span-2 min-w-0 md:order-none md:col-span-1">
-        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Servidor</div>
-        <div className={`truncate text-sm ${client.servidor === '-' ? 'text-center' : ''}`}>{client.servidor || '—'}</div>
-      </div>
-      <div className="hidden min-w-0 md:block md:text-center">
-        <div className="text-xs text-adm-brand-foreground/50">Base de datos</div>
-        <div className="truncate text-sm">{client.baseDatos || '—'}</div>
-      </div>
-      <div className="order-3 col-span-2 min-w-0 md:order-none md:col-span-1">
-        <div className="text-[10px] text-adm-brand-foreground/50 md:text-xs">Plan</div>
-        <div className="font-semibold text-adm-orange">{client.plan || '—'}</div>
-      </div>
-      <div className="absolute right-2 top-2 flex items-center gap-1 md:static md:col-span-1 md:justify-end" onClick={(event) => event.stopPropagation()}>
-        <div className="mr-1 flex flex-col">
-          <button type="button" aria-label="Mover cliente hacia arriba" disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
-          <button type="button" aria-label="Mover cliente hacia abajo" disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-1 text-adm-brand-foreground/50 hover:bg-adm-brand-foreground/10 disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
+    <Modal
+      eyebrow="Detalle del cliente"
+      title={`${client.nombre} ${client.apellido}`}
+      onClose={onClose}
+      footer={
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onPaid} disabled={busy} className={btn.primary}><Check className="size-4" aria-hidden="true" />Registrar pago de hoy</button>
+          <button type="button" onClick={onEdit} className={btn.secondary}><Pencil className="size-4" aria-hidden="true" />Editar</button>
+          <button type="button" onClick={onDelete} disabled={busy} className={`${btn.secondary} text-red-600 hover:border-red-300 hover:bg-red-50 sm:ml-auto`}><Trash2 className="size-4" aria-hidden="true" />Eliminar</button>
         </div>
-        <button onClick={onEdit} className="rounded-lg border border-adm-brand-foreground/15 p-2 text-adm-brand-foreground/70 hover:bg-adm-brand-foreground/10" aria-label={`Editar ${client.nombre}`}>
-          <Pencil className="size-4" />
-        </button>
-        <button onClick={onDelete} className="rounded-lg border border-red-300/20 p-2 text-red-300 hover:bg-red-300/10" aria-label={`Eliminar ${client.nombre}`}>
-          <Trash2 className="size-4" />
-        </button>
+      }
+    >
+      <div className="mb-5 flex flex-wrap gap-2">
+        {clean(client.telefono) && <a href={whatsappUrl(client.telefono)} target="_blank" rel="noreferrer" className={btn.secondary}><MessageCircle className="size-4" aria-hidden="true" />WhatsApp</a>}
+        {clean(client.mail) && <a href={`mailto:${client.mail}`} className={btn.secondary}><Mail className="size-4" aria-hidden="true" />Mail</a>}
+        {unsubscribed && <Badge tone="amber" className="self-center">Falta suscribir en Mercado Pago</Badge>}
+        {paidByMp && <Badge tone="green" className="self-center">Mercado Pago cobró el {formatDate(paidByMp)}</Badge>}
       </div>
-    </div>
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <div key={group.title}>
+            <p className="eyebrow mb-2 text-[10px] text-muted-ink">{group.title}</p>
+            <dl className="grid gap-x-5 gap-y-3 rounded-2xl border border-line p-4 sm:grid-cols-2">
+              {group.items.map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="text-xs text-muted-ink">{label}</dt>
+                  <dd className="mt-0.5 break-words text-sm font-medium">{value || '—'}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+    </Modal>
   )
-}
-
-function SubscribeBadge() {
-  return <span className="ml-2 inline-block rounded-full bg-amber-400/90 px-2 py-0.5 align-middle text-[10px] font-bold text-black">Falta suscribir</span>
 }

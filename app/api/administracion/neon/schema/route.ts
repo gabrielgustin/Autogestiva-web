@@ -1,6 +1,6 @@
 import { getNeonToken } from '@/lib/admin/neon-token'
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@/lib/admin/neon-api'
+import { neon, neonErrorMessage } from '@/lib/admin/neon-api'
 import { requireAdmin } from '@/lib/admin/require-admin'
 
 
@@ -56,6 +56,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ projectId, name: project.name ?? projectId, branch: branch.name ?? branch.id, database: database.name, tables }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     console.error('[v0] Neon schema lookup error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo consultar el esquema de Neon' }, { status: 502 })
+    return NextResponse.json({ error: neonErrorMessage(error) }, { status: 502 })
   }
 }

@@ -1,6 +1,6 @@
 import { getNeonToken } from '@/lib/admin/neon-token'
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@/lib/admin/neon-api'
+import { neon, neonErrorMessage } from '@/lib/admin/neon-api'
 import { requireAdmin } from '@/lib/admin/require-admin'
 import { Client } from 'pg'
 
@@ -100,7 +100,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ columns, rows, total, page, pageSize })
   } catch (error) {
     console.error('[v0] Neon rows lookup error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudieron leer los registros' }, { status: 502 })
+    // Errores de Postgres (traen `code`) son de la consulta; el resto, de la conexión con Neon. Nunca se devuelve el texto crudo.
+    return NextResponse.json({ error: error instanceof Error && 'code' in error ? 'No se pudieron leer los registros de la tabla.' : neonErrorMessage(error) }, { status: 502 })
   } finally {
     await client?.end().catch(() => undefined)
   }

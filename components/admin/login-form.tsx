@@ -3,10 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Lock } from 'lucide-react'
+import { Logo } from '@/components/logo'
+import { btn, inputClass } from '@/components/admin/ui'
 import { TAB_MARKER } from '@/components/admin/session-guard'
-
-const inputClass =
-  'h-11 w-full rounded-lg border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 px-3 text-sm text-adm-brand-foreground outline-none placeholder:text-adm-brand-foreground/40 focus:border-adm-orange'
 
 export function LoginForm() {
   const router = useRouter()
@@ -39,33 +38,32 @@ export function LoginForm() {
 
   return (
     <div className="w-full max-w-sm">
-      <a
-        href="/"
-        className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-adm-brand-foreground/65 transition-colors hover:text-adm-brand-foreground"
-      >
+      <a href="/" className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-muted-ink transition-colors hover:text-ink">
         <ArrowLeft className="size-4" aria-hidden="true" />
-        Volver
+        Volver a la web
       </a>
-      <form onSubmit={submit} className="w-full rounded-2xl border border-adm-brand-foreground/15 bg-adm-brand p-6 shadow-2xl">
-      <div className="mb-6 flex size-10 items-center justify-center rounded-lg bg-adm-orange text-adm-orange-foreground">
-        <Lock className="size-5" aria-hidden="true" />
-      </div>
-      <h1 className="text-2xl font-black tracking-tight">Acceso administrador</h1>
-      <p className="mt-2 text-sm text-adm-brand-foreground/65">Ingresá para ver y editar tu cartera de clientes.</p>
-      <div className="mt-6 grid gap-4">
-        <label className="text-xs font-semibold text-adm-brand-foreground/65">
-          Email
-          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className={`${inputClass} mt-2`} />
-        </label>
-        <label className="text-xs font-semibold text-adm-brand-foreground/65">
-          Contraseña
-          <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={`${inputClass} mt-2`} />
-        </label>
-      </div>
-      {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
-      <button disabled={loading} className="mt-6 h-11 w-full rounded-full bg-adm-orange text-sm font-bold text-adm-orange-foreground disabled:opacity-60">
-        {loading ? 'Ingresando…' : 'Ingresar'}
-      </button>
+      <form onSubmit={submit} className="w-full rounded-3xl border border-line bg-white p-6 shadow-[0_30px_70px_-35px_rgba(11,19,34,0.35)] sm:p-8">
+        <Logo bg="#ffffff" className="h-[38px]" />
+        <p className="eyebrow mt-8 flex items-center gap-2 text-[10px] text-muted-ink">
+          <Lock className="size-3" aria-hidden="true" />
+          Panel de administración
+        </p>
+        <h1 className="font-display mt-2 text-3xl font-bold tracking-[-0.035em]">Ingresá a tu panel</h1>
+        <p className="mt-2 text-sm text-muted-ink">Clientes, cobros e infraestructura en un solo lugar.</p>
+        <div className="mt-6 grid gap-4">
+          <label className="text-xs font-semibold text-ink/70">
+            Email
+            <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+          <label className="text-xs font-semibold text-ink/70">
+            Contraseña
+            <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+        </div>
+        {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        <button disabled={loading} className={`${btn.primary} mt-6 h-11 w-full`}>
+          {loading ? 'Ingresando…' : 'Ingresar'}
+        </button>
       </form>
     </div>
   )

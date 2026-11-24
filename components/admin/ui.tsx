@@ -1,0 +1,146 @@
+'use client'
+
+import { useEffect } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { X } from 'lucide-react'
+import { Logo } from '@/components/logo'
+import { LogoutButton } from '@/components/admin/session-guard'
+
+// Piezas del panel con el mismo lenguaje visual que la web pública (papel, tinta, azul de marca, naranja de acento).
+
+export const btn = {
+  primary:
+    'inline-flex h-10 items-center justify-center gap-2 rounded-full bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-brand focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/25 disabled:opacity-50',
+  accent:
+    'inline-flex h-10 items-center justify-center gap-2 rounded-full bg-orange-500 px-4 text-sm font-semibold text-white shadow-[0_10px_30px_-12px_rgba(249,115,22,0.7)] transition-colors hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-500/30 disabled:opacity-50',
+  secondary:
+    'inline-flex h-10 items-center justify-center gap-2 rounded-full border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ink/30 hover:bg-paper focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/20 disabled:opacity-50',
+  icon:
+    'inline-flex size-9 items-center justify-center rounded-full border border-line bg-white text-ink/70 transition-colors hover:border-ink/30 hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/20 disabled:opacity-30',
+  danger:
+    'inline-flex size-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-500/20',
+}
+
+export const inputClass =
+  'h-11 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none transition-shadow placeholder:text-ink/35 focus:border-brand focus:ring-4 focus:ring-brand/10'
+
+export const card = 'rounded-2xl border border-line bg-white'
+
+const nav = [
+  { href: '/administracion/clientes', label: 'Clientes' },
+  { href: '/administracion', label: 'Infraestructura' },
+]
+
+export function AdminShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const active = (href: string) => (href === '/administracion' ? pathname === href || pathname.startsWith('/administracion/proyectos') : pathname.startsWith(href))
+  return (
+    <div className="bg-blueprint min-h-screen bg-paper text-ink">
+      <header className="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 md:px-8">
+          <div className="flex items-center gap-3">
+            <Link href="/administracion/clientes" aria-label="Autogestiva, ir a clientes">
+              <Logo bg="#ffffff" className="h-[34px] md:h-[38px]" />
+            </Link>
+            <span className="eyebrow hidden rounded-full border border-line px-2.5 py-1.5 text-[10px] text-muted-ink sm:inline-block">Panel</span>
+          </div>
+          <LogoutButton className="md:order-last" />
+          <nav aria-label="Secciones del panel" className="flex w-full gap-1 rounded-full border border-line bg-paper p-1 md:w-auto">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active(item.href) ? 'page' : undefined}
+                className={`flex-1 rounded-full px-4 py-2 text-center text-sm font-semibold transition-colors md:flex-none ${active(item.href) ? 'bg-ink text-white' : 'text-ink/70 hover:bg-white hover:text-ink'}`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </header>
+      <main>
+        <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-10">{children}</div>
+      </main>
+    </div>
+  )
+}
+
+export function PageHeader({ eyebrow, title, description, children }: { eyebrow: string; title: React.ReactNode; description?: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="mb-6 flex flex-col gap-4 md:mb-8 md:flex-row md:items-end md:justify-between">
+      <div className="min-w-0">
+        <p className="eyebrow flex items-center gap-3 text-muted-ink">
+          <span className="h-px w-8 bg-ink/25" />
+          {eyebrow}
+        </p>
+        <h1 className="font-display mt-3 text-[2rem] font-bold leading-none tracking-[-0.035em] md:text-[2.75rem]">{title}</h1>
+        {description && <p className="mt-3 max-w-2xl text-[15px] text-muted-ink">{description}</p>}
+      </div>
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
+    </div>
+  )
+}
+
+export function Stat({ label, value, detail, icon }: { label: string; value: React.ReactNode; detail?: React.ReactNode; icon: React.ReactNode }) {
+  return (
+    <div className={`${card} p-4 md:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-xs font-medium text-muted-ink md:text-sm">{label}</div>
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-light text-brand [&>svg]:size-4">{icon}</div>
+      </div>
+      <div className="font-display mt-3 text-2xl font-bold tracking-tight md:text-3xl">{value}</div>
+      {detail && <div className="mt-1 text-xs text-muted-ink">{detail}</div>}
+    </div>
+  )
+}
+
+const badgeTones = {
+  red: 'bg-red-50 text-red-700 ring-red-200',
+  orange: 'bg-orange-50 text-orange-700 ring-orange-200',
+  amber: 'bg-amber-50 text-amber-800 ring-amber-200',
+  green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  blue: 'bg-brand-light text-brand ring-brand/20',
+  gray: 'bg-paper text-muted-ink ring-line',
+}
+
+export function Badge({ tone = 'gray', children, className = '' }: { tone?: keyof typeof badgeTones; children: React.ReactNode; className?: string }) {
+  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${badgeTones[tone]} ${className}`}>{children}</span>
+}
+
+// Ventana modal: cierra con Escape o tocando afuera, y bloquea el scroll de la página mientras está abierta.
+export function Modal({ title, eyebrow, onClose, children, footer }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = previous
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className="animate-rise-in flex max-h-[92vh] [animation-duration:280ms] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] sm:rounded-3xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-7 sm:py-5">
+          <div className="min-w-0">
+            {eyebrow && <p className="eyebrow text-[10px] text-orange-600">{eyebrow}</p>}
+            <h2 className="font-display mt-1.5 text-2xl font-bold tracking-tight text-balance">{title}</h2>
+          </div>
+          <button type="button" aria-label="Cerrar" onClick={onClose} className={btn.icon}>
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto px-5 py-5 sm:px-7">{children}</div>
+        {footer && <div className="border-t border-line bg-paper/60 px-5 py-4 sm:px-7">{footer}</div>}
+      </section>
+    </div>
+  )
+}
+
+export function EmptyState({ children }: { children: React.ReactNode }) {
+  return <div className="px-6 py-14 text-center text-sm text-muted-ink">{children}</div>
+}

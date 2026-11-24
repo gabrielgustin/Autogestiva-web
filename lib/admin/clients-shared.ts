@@ -2,7 +2,8 @@ export const COLUMNS = ['nombre', 'apellido', 'empresa', 'producto', 'dominio', 
 
 export type ClientColumn = (typeof COLUMNS)[number]
 export type ClientInput = Record<ClientColumn, string>
-export type SheetClient = ClientInput & { row: number }
+// `row` es el id (uuid) del cliente en la base.
+export type SheetClient = ClientInput & { row: string }
 
 export const COLUMN_LABELS: Record<ClientColumn, string> = {
   nombre: 'Nombre',

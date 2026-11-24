@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { LogoutButton } from '@/components/admin/session-guard'
-import { Activity, ArrowUpRight, Database, RefreshCw, Server, Wallet } from 'lucide-react'
+import { Activity, ArrowUpRight, Database, HardDrive, Pause, Play, RefreshCw, Server, Wallet } from 'lucide-react'
+import { AdminShell, Badge, EmptyState, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
 
 type Cost = { compute: number; storage: number; restore: number; snapshots: number; branches: number; transfer: number; total: number }
 type Spike = { date: string; cost: number; average: number }
@@ -14,6 +14,10 @@ type Data = { projects: Project[]; organizations: { id: string; name: string }[]
 const number = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })
 const unavailable = 'No disponible'
+const monthName = (value: string) => {
+  const [year, month] = value.split('-').map(Number)
+  return year && month ? new Date(year, month - 1, 15).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : value
+}
 
 function formatBytes(bytes: number | null) {
   if (bytes === null) return unavailable
@@ -30,42 +34,24 @@ function usage(value: number | null, unit: string) {
   return `${number.format(value)} ${unit}`
 }
 
-export default function Page() {
-  const currentMonth = new Date().toISOString().slice(0, 7)
+const isIdle = (project: Project) => /idle|suspend/i.test(project.endpointStatus)
+
+export default function InfrastructureDashboard() {
+  const currentMonth = new Date().toLocaleDateString('sv-SE').slice(0, 7)
   const [month, setMonth] = useState(currentMonth)
   const [loadedMonth, setLoadedMonth] = useState(currentMonth)
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [controlling, setControlling] = useState<string | null>(null)
-  const [hasScrolled, setHasScrolled] = useState(false)
-
-  useEffect(() => {
-    const handleScroll = () => setHasScrolled(window.scrollY > 140)
-    handleScroll()
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  async function controlCompute(project: Project, action: 'suspend' | 'start') {
-    if (!project.endpointId) return
-    const verb = action === 'suspend' ? 'suspender' : 'reactivar'
-    if (!window.confirm(`¿Querés ${verb} el compute de ${project.name}? No se eliminan datos; solo cambia el estado del endpoint.`)) return
-    setControlling(project.id)
-    try {
-      const response = await fetch('/api/administracion/neon/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: project.id, endpointId: project.endpointId, action }) })
-      if (!response.ok) throw new Error()
-      await load()
-    } catch { setError(`No se pudo ${verb} el compute de ${project.name}.`) }
-    finally { setControlling(null) }
-  }
 
   const requestId = useRef(0)
-  const load = useCallback(async (selectedMonth = month) => {
+  const load = useCallback(async (selectedMonth: string) => {
     const id = ++requestId.current
     const valid = /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : currentMonth
     if (valid !== selectedMonth) setMonth(valid)
-    setLoading(true); setError('')
+    setLoading(true)
+    setError('')
     try {
       const response = await fetch(`/api/administracion/neon?month=${valid}`, { cache: 'no-store' })
       if (response.status === 401) { window.location.replace('/administracion/login'); return }
@@ -80,8 +66,25 @@ export default function Page() {
     } finally {
       if (id === requestId.current) setLoading(false)
     }
-  }, [month, currentMonth])
-  useEffect(() => { load() }, [])
+  }, [currentMonth])
+
+  useEffect(() => { load(currentMonth) }, [load, currentMonth])
+
+  async function controlCompute(project: Project, action: 'suspend' | 'start') {
+    if (!project.endpointId) return
+    const verb = action === 'suspend' ? 'suspender' : 'reactivar'
+    if (!window.confirm(`¿Querés ${verb} el compute de ${project.name}? No se eliminan datos; solo cambia el estado del servidor de la base.`)) return
+    setControlling(project.id)
+    try {
+      const response = await fetch('/api/administracion/neon/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: project.id, endpointId: project.endpointId, action }) })
+      if (!response.ok) throw new Error()
+      await load(loadedMonth)
+    } catch {
+      setError(`No se pudo ${verb} el compute de ${project.name}.`)
+    } finally {
+      setControlling(null)
+    }
+  }
 
   const totals = useMemo(() => {
     const projects = data?.projects ?? []
@@ -95,57 +98,139 @@ export default function Page() {
   const sortedProjects = useMemo(() => [...(data?.projects ?? [])].sort((a, b) => b.cost.total - a.cost.total), [data])
   const spikes = sortedProjects.filter((project) => project.spike)
   const limitAlerts = sortedProjects.flatMap((project) => project.alerts.map((alert) => ({ ...alert, project: project.name, id: `${project.id}-${alert.type}` })))
+  const costUnknown = data?.consumptionAvailable === false
+  // Sin datos (cargando o con error) se muestra un guion, nunca ceros que parezcan reales.
+  const showValue = (value: string) => (data ? value : '—')
 
-  return <main className="min-h-screen overflow-x-hidden bg-adm-brand text-adm-brand-foreground" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px)', backgroundSize: '42px 42px' }}>
-    <div className="relative overflow-visible bg-transparent text-adm-brand-foreground">
-      <div className="relative mx-auto max-w-7xl px-4 pb-4 pt-6 sm:px-6 md:px-10 md:pb-6 md:pt-16">
-        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <span className="inline-flex h-8 items-center rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 text-xs font-semibold text-adm-brand-foreground sm:h-10 sm:px-5 sm:text-sm">Infraestructura</span>
-            <Link href="/administracion/clientes" className="inline-flex h-8 items-center rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 text-xs font-semibold text-adm-brand-foreground hover:bg-adm-brand-foreground/15 sm:h-10 sm:px-5 sm:text-sm">Clientes</Link>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => load()} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 !h-10 !w-10 !min-w-0 !flex-none !p-0' : 'px-3 sm:px-5'} inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-full bg-adm-orange text-xs font-semibold sm:h-10 sm:gap-2 sm:text-sm text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`} disabled={loading}><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /><span className={hasScrolled ? 'sr-only' : ''}>{loading ? 'Sincronizando' : 'Actualizar'}</span></button>
-            <LogoutButton className="!h-8 !gap-1.5 !px-3 !text-xs sm:!h-10 sm:!px-5 sm:!text-sm" />
-          </div>
+  return (
+    <AdminShell>
+      <PageHeader eyebrow="Neon" title="Infraestructura" description="Consumo y costo de las bases de datos de todos tus proyectos.">
+        <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); load(month) }}>
+          <label className="sr-only" htmlFor="month">Mes a consultar</label>
+          <input id="month" type="month" value={month} max={currentMonth} onChange={(event) => setMonth(event.target.value)} className={`${inputClass} h-10 w-auto rounded-full px-4`} />
+          <button type="submit" disabled={loading} className={btn.secondary}>
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            {loading ? 'Cargando' : month === loadedMonth ? 'Actualizar' : 'Consultar'}
+          </button>
+        </form>
+      </PageHeader>
+
+      {error && (
+        <div role="alert" className="mb-6 flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}{data ? ' Se muestran los últimos datos cargados.' : ''}</span>
+          <button type="button" onClick={() => load(month)} disabled={loading} className={btn.secondary}>{loading ? 'Reintentando…' : 'Reintentar'}</button>
         </div>
-      </div>
-    </div>
-    <div className="mx-auto max-w-7xl px-3 py-4 text-adm-brand-foreground sm:px-4 sm:py-6 md:px-6 md:py-8">
-      {error && <div role="alert" className="mb-6 flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"><span>{error}{data ? ' Se muestran los últimos datos cargados.' : ''}</span><button onClick={() => load()} disabled={loading} className="shrink-0 rounded-md border border-destructive/40 px-3 py-1.5 text-xs font-bold hover:bg-destructive/10 disabled:opacity-50">{loading ? 'Reintentando…' : 'Reintentar'}</button></div>}
-      {(data || !error) && <>
-        <section className="mb-6 flex flex-col gap-4 rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 p-5 md:flex-row md:items-end md:justify-between">
-          <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Histórico mensual de cuenta</div><h2 className="mt-2 text-xl font-bold">Consumo de {loadedMonth}</h2><p className="mt-1 text-sm text-adm-brand-foreground/70">Suma de los registros diarios de todos tus proyectos Neon, incluyendo los proyectos sin actividad.</p></div>
-          <div className="flex items-end gap-3"><label className="text-xs font-semibold text-adm-brand-foreground/70"><span className="mb-2 block">Mes a consultar</span><input type="month" value={month} max={currentMonth} onChange={(event) => setMonth(event.target.value)} className="h-10 rounded-lg border border-adm-brand-foreground/20 bg-adm-brand px-3 text-sm text-adm-brand-foreground outline-none focus:border-adm-orange" /></label><button onClick={() => load()} disabled={loading} className="h-10 rounded-lg bg-adm-orange px-4 text-sm font-bold text-adm-orange-foreground disabled:opacity-50">Consultar</button></div>
+      )}
+
+      {data && ((data.diagnostics?.length ?? 0) > 0 || costUnknown) && (
+        <section role="status" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Datos incompletos</p>
+          <p className="mt-1">{costUnknown ? 'No se pudo leer el consumo desde Neon: los gastos y proyecciones no son confiables. ' : ''}Probá actualizar en unos minutos.</p>
+          {!!data.diagnostics?.length && <ul className="mt-2 list-disc pl-5 text-amber-800">{data.diagnostics.map((item) => <li key={item}>{item}</li>)}</ul>}
         </section>
-        {data && ((data.diagnostics?.length ?? 0) > 0 || data.consumptionAvailable === false) && <section className="mb-6 rounded-xl border border-adm-orange/50 bg-adm-orange/15 p-5 text-sm" role="status"><div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Datos incompletos</div><p className="mt-2">{data.consumptionAvailable === false ? 'No se pudo leer el consumo desde Neon: los gastos y proyecciones no son confiables. ' : ''}Probá actualizar en unos minutos.</p><ul className="mt-2 list-disc pl-5 text-adm-brand-foreground/75">{data.diagnostics?.map((item) => <li key={item}>{item}</li>)}</ul></section>}
-        <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Metric icon={<Wallet />} label="Gasto del mes" value={loading ? '—' : data?.consumptionAvailable === false ? unavailable : money.format(data?.cost.total ?? 0)} detail={`Acumulado al día ${data?.cost.elapsedDays ?? 0} de ${data?.cost.daysInMonth ?? 0}`} />
-          <Metric icon={<Activity />} label="Proyección a fin de mes" value={loading ? '—' : data?.consumptionAvailable === false ? unavailable : money.format(data?.cost.projected ?? 0)} detail="Según el ritmo de gasto actual" />
+      )}
+
+      <section aria-label="Costo del mes" className="mb-4 grid gap-3 md:mb-6 md:grid-cols-2 md:gap-4">
+        <div className="rounded-2xl bg-ink p-5 text-white md:p-6">
+          <p className="eyebrow text-[10px] text-white/55">Gasto de {monthName(loadedMonth)}</p>
+          <p className="font-display mt-3 text-4xl font-bold tracking-tight md:text-5xl">{showValue(costUnknown ? unavailable : money.format(data?.cost.total ?? 0))}</p>
+          <p className="mt-2 text-sm text-white/60">{data ? `Acumulado al día ${data.cost.elapsedDays} de ${data.cost.daysInMonth}` : 'Sin datos'}</p>
+        </div>
+        <div className={`${card} p-5 md:p-6`}>
+          <p className="eyebrow text-[10px] text-muted-ink">Proyección a fin de mes</p>
+          <p className="font-display mt-3 text-4xl font-bold tracking-tight text-brand md:text-5xl">{showValue(costUnknown ? unavailable : money.format(data?.cost.projected ?? 0))}</p>
+          <p className="mt-2 text-sm text-muted-ink">Según el ritmo de gasto actual</p>
+        </div>
+      </section>
+
+      <section aria-label="Consumo" className="mb-6 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+        <Stat icon={<Server />} label="Proyectos" value={showValue(number.format(data?.projects.length ?? 0))} detail={data ? `${data.organizations.length} ${data.organizations.length === 1 ? 'organización' : 'organizaciones'}` : undefined} />
+        <Stat icon={<Activity />} label="Compute" value={showValue(usage(totals.compute, 'h'))} detail="Horas del mes" />
+        <Stat icon={<HardDrive />} label="Almacenamiento" value={showValue(formatBytes(totals.storage))} detail="Tamaño actual" />
+        <Stat icon={<ArrowUpRight />} label="Transferencia" value={showValue(usage(totals.transfer, 'GB'))} detail="Total del mes" />
+      </section>
+
+      {(limitAlerts.length > 0 || spikes.length > 0) && (
+        <section role="alert" className="mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900 md:p-5">
+          <p className="font-display text-lg font-bold tracking-tight">Para revisar</p>
+          <ul className="mt-2 space-y-1.5">
+            {limitAlerts.map((alert) => <li key={alert.id}><span className="font-semibold">{alert.project}</span>: {alert.message}.</li>)}
+            {spikes.map((project) => <li key={project.id}><span className="font-semibold">{project.name}</span>: gastó {money.format(project.spike!.cost)} el {project.spike!.date}, contra un promedio diario de {money.format(project.spike!.average)}.</li>)}
+          </ul>
         </section>
-        {limitAlerts.length > 0 && <section className="mb-6 rounded-xl border border-adm-orange/50 bg-adm-orange/15 p-5" role="alert">
-          <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Límites del plan · {limitAlerts.length} {limitAlerts.length === 1 ? 'aviso' : 'avisos'}</div>
-          <ul className="mt-3 flex flex-col gap-2 text-sm">{limitAlerts.map(alert => <li key={alert.id}><span className="font-semibold">{alert.project}</span>: {alert.message}.</li>)}</ul>
-        </section>}
-        {spikes.length > 0 && <section className="mb-6 rounded-xl border border-adm-orange/50 bg-adm-orange/15 p-5" role="alert">
-          <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Alerta de costos · {spikes.length} {spikes.length === 1 ? 'proyecto' : 'proyectos'} con pico</div>
-          <ul className="mt-3 flex flex-col gap-2 text-sm">{spikes.map(project => <li key={project.id}><span className="font-semibold">{project.name}</span>: {money.format(project.spike!.cost)} el {project.spike!.date}, contra un promedio diario de {money.format(project.spike!.average)}.</li>)}</ul>
-        </section>}
-        <section className="grid gap-4 border-b border-border pb-8 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric icon={<Wallet />} label="Proyectos" value={loading ? '—' : number.format(data?.projects.length ?? 0)} detail={`${data?.organizations.length ?? 0} ${data?.organizations.length === 1 ? 'organización' : 'organizaciones'}`} />
-          <Metric icon={<Activity />} label="Compute utilizado" value={loading ? '—' : usage(totals.compute, 'h')} detail={`Total mensual · ${loadedMonth}`} />
-          <Metric icon={<Database />} label="Almacenamiento" value={loading ? '—' : formatBytes(totals.storage)} detail="Tamaño actual de todos los proyectos" />
-          <Metric icon={<ArrowUpRight />} label="Transferencia" value={loading ? '—' : usage(totals.transfer, 'GB')} detail="Total mensual" />
-        </section>
-        <section className="mb-6 overflow-hidden rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 shadow-sm"><div className="border-b border-adm-brand-foreground/10 px-5 py-4"><div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Control de compute</div><p className="mt-1 text-sm text-adm-brand-foreground/65">Suspende o reactiva el compute sin eliminar las bases ni los datos.</p></div><div className="grid gap-3 p-4 md:grid-cols-2">{sortedProjects.map((project) => { const isSuspended = project.endpointStatus.toLowerCase().includes('idle') || project.endpointStatus.toLowerCase().includes('suspend'); const busy = controlling === project.id; return <div key={project.id} className="flex items-center justify-between gap-4 rounded-lg border border-adm-brand-foreground/10 bg-adm-brand-foreground/5 px-4 py-3"><div className="min-w-0"><div className="truncate text-sm font-semibold">{project.name}</div><div className="mt-1 text-xs text-adm-brand-foreground/55">{isSuspended ? 'En reposo' : project.endpointStatus === 'unknown' ? 'Estado no disponible' : 'Activo'} · {project.plan}</div></div>{project.endpointId ? <button onClick={() => controlCompute(project, isSuspended ? 'start' : 'suspend')} disabled={busy} className="shrink-0 rounded-md border border-adm-orange/40 px-3 py-2 text-xs font-bold text-adm-orange transition-colors hover:bg-adm-orange/15 disabled:opacity-50">{busy ? 'Procesando…' : isSuspended ? 'Reactivar' : 'Suspender'}</button> : <span className="text-xs text-adm-brand-foreground/45">Sin endpoint</span>}</div> })}</div></section>
-        <section className="mt-8 overflow-hidden rounded-lg border border-adm-resource-panel-border bg-adm-resource-panel shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-adm-resource-panel-border bg-adm-resource-panel-header px-5 py-5 md:flex-row md:items-center md:justify-between"><div><div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-adm-orange"><span className="size-2 rounded-full bg-adm-orange" />Panel de recursos</div><h2 className="text-lg font-bold tracking-tight text-adm-brand-foreground">Todos los proyectos</h2><p className="mt-1 text-sm text-adm-brand-foreground/70">Lectura en tiempo real desde la API de Neon</p></div><span className="rounded-full border border-adm-orange/35 bg-adm-orange/15 px-3 py-1 text-xs font-bold text-adm-orange">{loading ? 'Cargando' : `${data?.projects.length ?? 0} ${data?.projects.length === 1 ? 'proyecto' : 'proyectos'}`}</span></div>
-          <div className="divide-y divide-adm-resource-panel-border">{loading ? [1,2,3].map(i => <div className="h-20 animate-pulse bg-adm-resource-panel-header" key={i} />) : <><div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(150px,1fr)_repeat(4,minmax(100px,1fr))] items-center gap-5 border-b border-adm-resource-panel-border bg-adm-resource-panel-header px-5 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-adm-brand-foreground/55 md:grid"><div>Proyecto</div><div>Gasto mensual</div><div className="text-right">Compute</div><div className="text-right">Storage</div><div className="text-right">Transfer</div><div className="text-right">Estado</div></div>{sortedProjects.map(project => <div className="grid gap-4 px-5 py-5 transition-colors hover:bg-adm-brand-foreground/5 md:grid-cols-[minmax(220px,1.4fr)_minmax(150px,1fr)_repeat(4,minmax(100px,1fr))] md:items-center md:gap-5" key={project.id}><div className="flex items-center gap-4"><div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-adm-brand/20 bg-adm-brand text-adm-brand-foreground"><Server className="size-5" /></div><div className="min-w-0"><Link href={`/administracion/proyectos/${encodeURIComponent(project.id)}`} className="block rounded-md outline-none hover:text-adm-orange focus-visible:ring-2 focus-visible:ring-adm-orange"><div className="flex flex-wrap items-center gap-2 font-semibold">{project.name}{project.spike && <span className="rounded-full bg-adm-orange px-2 py-0.5 text-[10px] font-bold uppercase text-adm-orange-foreground">Pico</span>}</div><div className="mt-1 truncate text-xs text-adm-brand-foreground/60">{project.region} · {project.plan}</div></Link></div></div><div><div className="font-bold text-adm-orange">{money.format(project.cost.total)}</div><div className="text-xs text-adm-brand-foreground/60">Proy. {money.format(project.projectedTotal)}</div></div><div className="flex justify-between border-t border-adm-brand-foreground/10 pt-3 text-sm md:block md:border-0 md:pt-0 md:text-right"><span className="text-xs text-adm-brand-foreground/60 md:hidden">Compute</span><span className="font-semibold">{usage(project.computeHours, 'h')}</span></div><div className="flex justify-between text-sm md:block md:text-right"><span className="text-xs text-adm-brand-foreground/60 md:hidden">Storage</span><span className="font-semibold">{formatBytes(project.storageBytes)}</span></div><div className="flex justify-between text-sm md:block md:text-right"><span className="text-xs text-adm-brand-foreground/60 md:hidden">Transfer</span><span className="font-semibold">{usage(project.transferGb, 'GB')}</span></div><div className="flex justify-between text-sm md:block md:text-right"><span className="text-xs text-adm-brand-foreground/60 md:hidden">Detalle</span><span className="text-[11px] leading-5 text-adm-brand-foreground/60">C {money.format(project.cost.compute)} · S {money.format(project.cost.storage + project.cost.restore + project.cost.snapshots)}<br />B {money.format(project.cost.branches)} · T {money.format(project.cost.transfer)}</span></div></div>)}</>}</div>
-        </section>
-        <p className="mt-5 text-xs text-muted-foreground">{data?.syncedAt ? `Última sincronización: ${new Date(data.syncedAt).toLocaleString('es-AR')}` : 'Conectando con Neon...'}</p>
-      </>}
-    </div>
-  </main>
+      )}
+
+      <section className={`${card} overflow-hidden`} aria-label="Proyectos">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 md:px-5">
+          <h2 className="font-display text-lg font-bold tracking-tight">Proyectos{data && <span className="text-muted-ink"> · {data.projects.length}</span>}</h2>
+          <p className="text-xs text-muted-ink">Tocá un proyecto para ver sus tablas</p>
+        </div>
+        <div className="hidden border-b border-line bg-paper/60 px-5 py-2.5 md:grid md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_repeat(3,minmax(0,0.8fr))_13rem] md:gap-4">
+          {['Proyecto', 'Gasto', 'Compute', 'Storage', 'Transfer'].map((label, i) => <div key={label} className={`eyebrow text-[10px] text-muted-ink ${i > 1 ? 'text-right' : ''}`}>{label}</div>)}
+          <div className="eyebrow text-right text-[10px] text-muted-ink">Estado</div>
+        </div>
+        <div className="divide-y divide-line">
+          {loading && !data ? (
+            [1, 2, 3].map((i) => <div className="h-20 animate-pulse bg-paper/70" key={i} />)
+          ) : sortedProjects.length === 0 ? (
+            <EmptyState>{error ? 'No se pudieron leer los proyectos.' : 'No hay proyectos para mostrar.'}</EmptyState>
+          ) : (
+            sortedProjects.map((project) => {
+              const idle = isIdle(project)
+              const busy = controlling === project.id
+              return (
+                <div key={project.id} className="px-4 py-3.5 md:grid md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_repeat(3,minmax(0,0.8fr))_13rem] md:items-center md:gap-4 md:px-5">
+                  <Link href={`/administracion/proyectos/${encodeURIComponent(project.id)}`} className="group flex min-w-0 items-center gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand transition-colors group-hover:bg-brand group-hover:text-white"><Database className="size-4" /></span>
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-1.5 font-semibold group-hover:text-brand">
+                        <span className="truncate">{project.name}</span>
+                        {project.spike && <Badge tone="orange">Pico</Badge>}
+                      </span>
+                      <span className="block truncate text-xs text-muted-ink">{project.region} · {project.plan}</span>
+                    </span>
+                  </Link>
+                  <div className="mt-3 flex items-baseline justify-between md:mt-0 md:block">
+                    <span className="text-xs text-muted-ink md:hidden">Gasto</span>
+                    <span>
+                      <span className="font-semibold text-brand">{money.format(project.cost.total)}</span>
+                      <span className="ml-2 text-xs text-muted-ink md:ml-0 md:block">Proy. {money.format(project.projectedTotal)}</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-paper/70 p-2.5 text-center md:contents">
+                    <Metric label="Compute" value={usage(project.computeHours, 'h')} />
+                    <Metric label="Storage" value={formatBytes(project.storageBytes)} />
+                    <Metric label="Transfer" value={usage(project.transferGb, 'GB')} />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 md:mt-0 md:justify-end">
+                    <Badge tone={idle || project.endpointStatus === 'unknown' ? 'gray' : 'green'}>{idle ? 'En reposo' : project.endpointStatus === 'unknown' ? 'Sin estado' : 'Activo'}</Badge>
+                    {project.endpointId && (
+                      <button type="button" onClick={() => controlCompute(project, idle ? 'start' : 'suspend')} disabled={busy} className={`${btn.secondary} h-8 px-3 text-xs`} aria-label={`${idle ? 'Reactivar' : 'Suspender'} el compute de ${project.name}`}>
+                        {idle ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
+                        {busy ? '…' : idle ? 'Reactivar' : 'Suspender'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </section>
+
+      <p className="mt-4 flex items-center gap-2 text-xs text-muted-ink">
+        <Wallet className="size-3.5" aria-hidden="true" />
+        {data?.syncedAt ? `Datos de Neon al ${new Date(data.syncedAt).toLocaleString('es-AR')}` : 'Conectando con Neon…'}
+      </p>
+    </AdminShell>
+  )
 }
 
-function Metric({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) { return <div className="rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 p-5 shadow-sm"><div className="mb-5 flex size-9 items-center justify-center rounded-lg bg-adm-brand text-adm-brand-foreground">{icon}</div><div className="text-sm text-muted-foreground">{label}</div><div className="mt-1 text-2xl font-semibold tracking-tight">{value}</div><div className="mt-2 text-xs text-muted-foreground">{detail}</div></div> }
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 md:text-right">
+      <div className="text-[10px] uppercase tracking-wide text-ink/40 md:hidden">{label}</div>
+      <div className="truncate text-sm font-semibold" title={value}>{value === unavailable ? '—' : value}</div>
+    </div>
+  )
+}

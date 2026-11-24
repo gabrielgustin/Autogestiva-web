@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin/admin-session'
 import { CLIENT_COLUMNS, isDbConfigured, sql, toClient, toRow, type ClientRow } from '@/lib/admin/db'
+import { fingerprint } from '@/lib/admin/clients-shared'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +10,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 async function guard() {
   if (!(await getAdminSession())) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   if (!isDbConfigured()) return NextResponse.json({ error: 'La base de datos no está configurada' }, { status: 503 })
+  return null
+}
+
+// Si el cliente cambió desde que se abrió la ficha (otra pestaña u otro dispositivo), no se pisa: devuelve 404/409.
+async function conflict(id: string, expected: unknown) {
+  if (typeof expected !== 'string') return null
+  const [current] = (await sql().query(`select ${CLIENT_COLUMNS} from clients where id = $1`, [id])) as ClientRow[]
+  if (!current) return NextResponse.json({ error: 'El cliente ya no existe. Actualizá la lista.' }, { status: 404 })
+  if (fingerprint(toClient(current)) !== expected) return NextResponse.json({ error: 'Este cliente cambió desde que lo abriste. Actualizá la lista y volvé a intentar.' }, { status: 409 })
   return null
 }
 
@@ -57,12 +67,14 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const denied = await guard()
   if (denied) return denied
-  const { row: id, ...fields } = await readJson(request)
+  const { row: id, expected, ...fields } = await readJson(request)
   if (typeof id !== 'string' || !UUID_RE.test(id)) return NextResponse.json({ error: 'Cliente inválido' }, { status: 400 })
   const parsed = toRow(fields)
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
   const columns = Object.keys(parsed.row)
   try {
+    const stale = await conflict(id, expected)
+    if (stale) return stale
     const [row] = await sql().query(
       `update clients set ${columns.map((column, i) => `${column} = $${i + 1}`).join(', ')}, updated_at = now()
        where id = $${columns.length + 1} returning ${CLIENT_COLUMNS}`,
@@ -99,9 +111,11 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const denied = await guard()
   if (denied) return denied
-  const { row: id } = await readJson(request)
+  const { row: id, expected } = await readJson(request)
   if (typeof id !== 'string' || !UUID_RE.test(id)) return NextResponse.json({ error: 'Cliente inválido' }, { status: 400 })
   try {
+    const stale = await conflict(id, expected)
+    if (stale) return stale
     await sql().query('delete from clients where id = $1', [id])
     return NextResponse.json({ ok: true })
   } catch (error) {
