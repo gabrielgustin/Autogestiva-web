@@ -55,8 +55,9 @@ const jsonLd = {
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" })
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" })
-// Tipografía del logo
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-space", display: "swap" })
+// Tipografía del logo. Va como fuente variable (sin `weight`): con pesos sueltos Google sirve el mismo archivo dos veces
+// y el build de Turbopack en Vercel falla al armar la fuente sin caché.
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space", display: "swap" })
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
   variable: "--font-bricolage",
