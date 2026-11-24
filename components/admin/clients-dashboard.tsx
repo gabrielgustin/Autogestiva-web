@@ -132,6 +132,8 @@ export function ClientsDashboard() {
     return clients.filter((client) => client.dominioVencimiento && client.dominioVencimiento >= today).sort((a, b) => a.dominioVencimiento.localeCompare(b.dominioVencimiento))[0] ?? null
   }, [clients])
   const alerts = useMemo(() => buildClientAlerts(clients, new Date(), mpPaid), [clients, mpPaid])
+  // Empresas con más de un aviso (p. ej. La Comanda con dos servicios): ahí el título suma el producto para distinguirlos.
+  const repeatedCompanies = useMemo(() => new Set(alerts.map((a) => a.cliente).filter((c, i, all) => all.indexOf(c) !== i)), [alerts])
   const clientByRow = useMemo(() => new Map(clients.map((client) => [client.row, client])), [clients])
   const filtered = useMemo(() => {
     const needle = normalizeText(query)
@@ -340,6 +342,7 @@ export function ClientsDashboard() {
                   key={alert.id}
                   alert={alert}
                   client={clientByRow.get(alertRow(alert))}
+                  showService={repeatedCompanies.has(alert.cliente)}
                   unsubscribed={alert.type === 'pago' && !!mpSubs && !mpSubs.has(alert.cliente)}
                   busy={busyRow === alertRow(alert)}
                   onPaid={markPaid}
@@ -508,12 +511,12 @@ function SelectFilter({ value, onChange, allLabel, options }: { value: string; o
   )
 }
 
-function AlertItem({ alert, client, unsubscribed, busy, onPaid, onOpen }: { alert: ClientAlert; client?: SheetClient; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {
+function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onOpen }: { alert: ClientAlert; client?: SheetClient; showService: boolean; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {
   return (
     <li className="flex items-center justify-between gap-3 bg-white px-4 py-3 md:px-5">
       <button type="button" onClick={() => client && onOpen(client)} className="min-w-0 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
         <span className="flex flex-wrap items-center gap-1.5">
-          <span className="font-semibold">{alert.cliente}</span>
+          <span className="font-semibold">{alert.cliente}{showService && client && clean(client.producto) && <span className="font-normal text-muted-ink"> · {client.producto}</span>}</span>
           <Badge tone={alert.days < 0 ? 'red' : 'orange'}>{describeDays(alert.days)}</Badge>
           {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
         </span>
