@@ -28,7 +28,8 @@ function daysUntil(isoDate: string, today: Date) {
 }
 
 // Domains expiring within DOMAIN_WARNING_DAYS and payments due within PAYMENT_WARNING_DAYS (overdue included), soonest first.
-// `paidThrough`: último cobro confirmado por Mercado Pago por empresa (YYYY-MM-DD); un pago ya cubierto no genera aviso.
+// `paidThrough`: último cobro confirmado por Mercado Pago por empresa (YYYY-MM-DD). Un cobro dentro del mes del vencimiento
+// (aunque sea antes del día, p. ej. cobró el 2 y vence el 10) o posterior lo cubre y no genera aviso.
 export function buildClientAlerts(clients: SheetClient[], today = new Date(), paidThrough: Record<string, string> = {}): ClientAlert[] {
   const alerts: ClientAlert[] = []
   const seenDomains = new Set<string>()
@@ -41,7 +42,7 @@ export function buildClientAlerts(clients: SheetClient[], today = new Date(), pa
       alerts.push({ id: `dominio-${client.row}`, type: 'dominio', cliente, detalle: client.dominio, date: client.dominioVencimiento, days: domainDays })
     }
     const paymentDays = daysUntil(client.proximoPago, today)
-    if (paymentDays !== null && paymentDays <= PAYMENT_WARNING_DAYS && !((paidThrough[cliente] ?? '') >= client.proximoPago)) {
+    if (paymentDays !== null && paymentDays <= PAYMENT_WARNING_DAYS && !((paidThrough[cliente] ?? '') >= `${client.proximoPago.slice(0, 8)}01`)) {
       alerts.push({ id: `pago-${client.row}`, type: 'pago', cliente, detalle: [client.producto, client.plan].filter((value) => value && value !== '-').join(' · ') || 'Pago', date: client.proximoPago, days: paymentDays })
     }
   }

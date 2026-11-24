@@ -17,4 +17,8 @@ const alerts = buildClientAlerts([client('Life Gym', '2026-11-10'), client('CTP'
 assert.deepEqual(alerts.map((a) => a.cliente), ['CTP'])
 assert.equal(alerts[0].days, -14)
 assert.equal(buildClientAlerts([client('Life Gym', '2026-11-10')], today, { 'Life Gym': '2026-10-12' }).length, 1)
+// Cobro antes del día de vencimiento pero en el mismo mes (Pipet Labor: cobró el 2, vence el 10): cubierto.
+assert.equal(buildClientAlerts([client('Pipet Labor', '2026-11-10')], today, { 'Pipet Labor': '2026-11-02' }).length, 0)
+// Cobro del mes anterior: no cubre.
+assert.equal(buildClientAlerts([client('Pipet Labor', '2026-11-10')], today, { 'Pipet Labor': '2026-10-30' }).length, 1)
 console.log('payments.check ok')
