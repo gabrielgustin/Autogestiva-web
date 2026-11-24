@@ -77,6 +77,7 @@ export function ClientsDashboard() {
   const [plan, setPlan] = useState('all')
   const [servidor, setServidor] = useState('all')
   const [editing, setEditing] = useState<SheetClient | null>(null)
+  const [addingTo, setAddingTo] = useState<SheetClient | null>(null)
   const [selectedClient, setSelectedClient] = useState<SheetClient | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [form, setForm] = useState<ClientInput>(emptyForm)
@@ -166,15 +167,19 @@ export function ClientsDashboard() {
     })
   }
 
-  function openNew() {
+  // Con `base`, es un servicio más para un cliente existente: se copian sus datos de contacto y la misma empresa lo agrupa.
+  function openNew(base?: SheetClient) {
+    setSelectedClient(null)
     setEditing(null)
-    setForm({ ...emptyForm })
+    setAddingTo(base ?? null)
+    setForm(base ? { ...emptyForm, nombre: base.nombre, apellido: base.apellido, empresa: base.empresa, mail: base.mail, telefono: base.telefono } : { ...emptyForm })
     setCustomPlan(false)
     setFormError('')
     setIsFormOpen(true)
   }
   function openEdit(client: SheetClient) {
     setSelectedClient(null)
+    setAddingTo(null)
     setEditing(client)
     setForm(toInput(client))
     setCustomPlan(isCustomPlan(client.plan))
@@ -209,7 +214,7 @@ export function ClientsDashboard() {
     setFormError('')
     try {
       await send(editing ? 'PUT' : 'POST', editing ? { ...form, row: editing.row, expected: fingerprint(toInput(editing)) } : form)
-      notify(editing ? 'Cambios guardados' : 'Cliente creado')
+      notify(editing ? 'Cambios guardados' : addingTo ? 'Servicio agregado' : 'Cliente creado')
       closeForm()
       await load()
     } catch (e) {
@@ -271,11 +276,16 @@ export function ClientsDashboard() {
   }
 
   async function remove(client: SheetClient) {
-    if (!window.confirm(`¿Eliminar a ${client.nombre} ${client.apellido}${clean(client.empresa) ? ` (${client.empresa})` : ''}? No se puede deshacer.`)) return
+    // Si la empresa tiene otros servicios, se borra solo este servicio y el cliente sigue.
+    const isService = !!clean(client.empresa) && clients.some((other) => other.row !== client.row && other.empresa === client.empresa)
+    const question = isService
+      ? `¿Eliminar el servicio "${clean(client.producto) || 'sin producto'}" de ${client.empresa}? Los demás servicios quedan. No se puede deshacer.`
+      : `¿Eliminar a ${client.nombre} ${client.apellido}${clean(client.empresa) ? ` (${client.empresa})` : ''}? No se puede deshacer.`
+    if (!window.confirm(question)) return
     setBusyRow(client.row)
     try {
       await send('DELETE', { row: client.row, expected: fingerprint(toInput(client)) })
-      notify('Cliente eliminado')
+      notify(isService ? 'Servicio eliminado' : 'Cliente eliminado')
       setSelectedClient(null)
       await load()
     } catch (e) {
@@ -306,7 +316,7 @@ export function ClientsDashboard() {
           <Download className="size-4" aria-hidden="true" />
           Exportar CSV
         </a>
-        <button type="button" onClick={openNew} className={btn.accent}>
+        <button type="button" onClick={() => openNew()} className={btn.accent}>
           <Plus className="size-4" aria-hidden="true" />
           Nuevo cliente
         </button>
@@ -406,7 +416,7 @@ export function ClientsDashboard() {
               const order = { canMoveUp: entryIndex > 0, canMoveDown: entryIndex < visibleEntries.length - 1, onMoveUp: () => moveEntry(entry.key, -1), onMoveDown: () => moveEntry(entry.key, 1) }
               if (entry.members.length === 1) return <ClientRow key={entry.key} {...rowProps(entry.members[0])} {...order} />
               return (
-                <GroupRow key={entry.key} entry={entry} unsubscribed={needsSubscription(entry.members[0])} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} {...order}>
+                <GroupRow key={entry.key} entry={entry} unsubscribed={needsSubscription(entry.members[0])} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} onAddService={() => openNew(entry.members[0])} {...order}>
                   {entry.members.map((client, memberIndex) => (
                     <ClientRow
                       key={client.row}
@@ -438,6 +448,7 @@ export function ClientsDashboard() {
           paidByMp={mpPaid[selectedClient.empresa] ?? ''}
           onClose={closeDetails}
           onEdit={() => openEdit(selectedClient)}
+          onAddService={() => openNew(selectedClient)}
           onPaid={() => markPaid(selectedClient)}
           onDelete={() => remove(selectedClient)}
         />
@@ -446,12 +457,12 @@ export function ClientsDashboard() {
       {isFormOpen && (
         <Modal
           eyebrow="Ficha de cliente"
-          title={editing ? `Editar a ${editing.nombre} ${editing.apellido}` : 'Nuevo cliente'}
+          title={editing ? `Editar a ${editing.nombre} ${editing.apellido}` : addingTo ? `Nuevo servicio para ${clean(addingTo.empresa) || `${addingTo.nombre} ${addingTo.apellido}`}` : 'Nuevo cliente'}
           onClose={closeForm}
           footer={
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
               <button type="button" onClick={closeForm} className={btn.secondary}>Cancelar</button>
-              <button type="submit" form="client-form" disabled={saving} className={btn.primary}>{saving ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear cliente'}</button>
+              <button type="submit" form="client-form" disabled={saving} className={btn.primary}>{saving ? 'Guardando…' : editing ? 'Guardar cambios' : addingTo ? 'Agregar servicio' : 'Crear cliente'}</button>
             </div>
           }
         >
@@ -640,7 +651,7 @@ function Cell({ label, children, extra, strong, className = '' }: { label: strin
   )
 }
 
-function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp, onMoveDown, children }: { entry: ClientEntry; unsubscribed: boolean; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
+function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onToggle, onAddService, onMoveUp, onMoveDown, children }: { entry: ClientEntry; unsubscribed: boolean; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onAddService: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
   const { members } = entry
   const names = [...new Set(members.map((member) => `${member.nombre} ${member.apellido}`))]
   const products = [...new Set(members.map((member) => clean(member.producto)).filter(Boolean))]
@@ -671,6 +682,9 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
         </div>
         <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
           <OrderButtons label={company} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+          <button type="button" onClick={onAddService} aria-label={`Agregar servicio a ${company}`} title="Agregar servicio" className={btn.icon}>
+            <Plus className="size-4" />
+          </button>
           <button type="button" onClick={onToggle} aria-label={expanded ? `Contraer ${company}` : `Ver servicios de ${company}`} className={btn.icon}>
             <ChevronDown className={`size-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </button>
@@ -681,7 +695,7 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   )
 }
 
-function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onPaid, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onPaid: () => void; onDelete: () => void }) {
+function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onDelete: () => void }) {
   const groups: { title: string; items: [string, string][] }[] = [
     { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
     { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
@@ -696,6 +710,7 @@ function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, 
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onPaid} disabled={busy} className={btn.primary}><Check className="size-4" aria-hidden="true" />Registrar pago de hoy</button>
           <button type="button" onClick={onEdit} className={btn.secondary}><Pencil className="size-4" aria-hidden="true" />Editar</button>
+          <button type="button" onClick={onAddService} className={btn.secondary}><Plus className="size-4" aria-hidden="true" />Agregar servicio</button>
           <button type="button" onClick={onDelete} disabled={busy} className={`${btn.secondary} text-red-600 hover:border-red-300 hover:bg-red-50 sm:ml-auto`}><Trash2 className="size-4" aria-hidden="true" />Eliminar</button>
         </div>
       }
