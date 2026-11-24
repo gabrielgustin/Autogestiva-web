@@ -8,8 +8,6 @@ export type Service = {
   h1: string
   intro: string
   includes: { title: string; text: string }[]
-  forWho: string[]
-  steps: { title: string; text: string }[]
   /** Nombres de proyectos de lib/site-data.ts */
   projectNames: string[]
   faqs: { q: string; a: string }[]
@@ -34,17 +32,6 @@ export const services: Service[] = [
       { title: "Formulario y WhatsApp", text: "Tus clientes te escriben directo." },
       { title: "Dominio, hosting y certificado", text: "Te la dejamos publicada y funcionando." },
       { title: "Autogestionable si lo necesitás", text: "Un panel simple para editar textos y novedades." },
-    ],
-    forWho: [
-      "Empresas y pymes que quieren una presencia profesional",
-      "Estudios y profesionales independientes",
-      "Comercios que hoy dependen solo de redes sociales",
-      "Quienes necesitan una landing para una campaña",
-    ],
-    steps: [
-      { title: "Conversamos", text: "Entendemos tu negocio y tus objetivos." },
-      { title: "Diseñamos y desarrollamos", text: "Te mostramos avances antes de publicar." },
-      { title: "Publicamos y acompañamos", text: "La dejamos online y seguimos mejorándola." },
     ],
     projectNames: ["Wavi", "Posty", "SEA", "Rumbo", "Santa Remera", "FA Automotores", "Jarabus", "Estudio Jurídico CONVS", "Cambel Red Jurídica", "Zonabot", "La Comanda Tejeda", "PipetLabor", "Mara Saúl Estética", "Life Gym"],
     faqs: [
@@ -73,17 +60,6 @@ export const services: Service[] = [
       { title: "Acceso desde cualquier lugar", text: "En el navegador, sin instalar nada." },
       { title: "Crece con vos", text: "Empezamos por lo urgente y sumamos módulos." },
     ],
-    forWho: [
-      "Pymes que gestionan todo en Excel o en papel",
-      "Negocios con turnos, stock o cuentas corrientes",
-      "Instituciones que necesitan ordenar sus procesos",
-      "Quienes probaron un sistema genérico y les quedó corto",
-    ],
-    steps: [
-      { title: "Relevamos tu operación", text: "Vemos cómo trabajás y qué te quita tiempo." },
-      { title: "Desarrollamos por etapas", text: "Primero lo esencial, probado con tu equipo." },
-      { title: "Implementamos y damos soporte", text: "Cargamos tus datos y capacitamos al equipo." },
-    ],
     projectNames: ["Colegio UTN", "Gestión Jurídica", "Inventarios ITS Villada", "JARA BUS Gestión"],
     faqs: [
       { q: "¿Qué es un ERP o sistema de gestión?", a: "Un programa que reúne en un solo lugar clientes, ventas, stock, pagos, turnos y reportes." },
@@ -109,17 +85,6 @@ export const services: Service[] = [
       { title: "Categorías, fotos y detalles", text: "Secciones, descripciones y promociones." },
       { title: "Pedido por WhatsApp", text: "El pedido te llega directo por WhatsApp." },
       { title: "También para comercios", text: "Funciona como catálogo de productos para cualquier negocio." },
-    ],
-    forWho: [
-      "Restaurantes, bares y cafeterías",
-      "Comercios que quieren mostrar su catálogo",
-      "Locales que cambian precios seguido",
-      "Eventos con menú propio",
-    ],
-    steps: [
-      { title: "Nos pasás tu carta", text: "Con tus productos, precios y tu marca." },
-      { title: "La armamos y la probamos", text: "Diseñamos la carta y generamos el QR." },
-      { title: "Te enseñamos a actualizarla", text: "Aprendés a usar el panel en minutos." },
     ],
     projectNames: ["La Comanda", "Cantina Digital", "ITS Boutique"],
     faqs: [
