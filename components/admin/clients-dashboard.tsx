@@ -82,6 +82,7 @@ export function ClientsDashboard() {
   const [error, setError] = useState('')
   const [hasScrolled, setHasScrolled] = useState(false)
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({})
+  const [mpSubs, setMpSubs] = useState<Set<string> | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
@@ -103,7 +104,7 @@ export function ClientsDashboard() {
   useEffect(() => {
     load()
     // Pagos confirmados por Mercado Pago; si falla, los avisos quedan como estaban.
-    fetch('/api/administracion/mercadopago', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => d?.pagos && setMpPaid(d.pagos)).catch(() => {})
+    fetch('/api/administracion/mercadopago', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!d?.pagos) return; setMpPaid(d.pagos); setMpSubs(new Set(d.suscriptos)) }).catch(() => {})
     const onScroll = () => setHasScrolled(window.scrollY > 24)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
@@ -139,6 +140,8 @@ export function ClientsDashboard() {
   const visibleEntries = useMemo(() => buildEntries(filtered), [filtered])
   const totalEntries = useMemo(() => buildEntries(clients).length, [clients])
   const isSearching = query.trim() !== ''
+  // Cliente con plan que todavía no tiene suscripción en Mercado Pago (solo si la consulta respondió).
+  const needsSubscription = (client: SheetClient) => !!mpSubs && !!client.plan.trim() && client.plan !== '-' && !mpSubs.has(client.empresa)
 
   function toggleGroup(key: string) {
     setExpandedGroups((current) => {
@@ -288,7 +291,7 @@ export function ClientsDashboard() {
                 <ul className="mt-3 grid gap-2 text-sm md:grid-cols-2">
                   {alerts.map((alert) => (
                     <li key={alert.id} className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-adm-brand-foreground/10 bg-adm-brand/40 px-3 py-2">
-                      <span className="min-w-0"><span className="font-semibold">{alert.cliente}</span><span className="block text-xs text-adm-brand-foreground/60 sm:truncate">{alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}</span></span>
+                      <span className="min-w-0"><span className="font-semibold">{alert.cliente}</span>{alert.type === 'pago' && mpSubs && !mpSubs.has(alert.cliente) && <span className="ml-2 rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-bold text-black">Falta suscribir</span>}<span className="block text-xs text-adm-brand-foreground/60 sm:truncate">{alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}</span></span>
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${alert.days < 0 ? 'bg-red-500/80 text-white' : 'bg-adm-orange text-adm-orange-foreground'}`}>{describeDays(alert.days)}</span>
                     </li>
                   ))}
@@ -332,12 +335,12 @@ export function ClientsDashboard() {
                     const canMoveDown = entryIndex < visibleEntries.length - 1
                     if (entry.members.length === 1) {
                       const client = entry.members[0]
-                      return <ClientRow key={entry.key} client={client} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
+                      return <ClientRow key={entry.key} unsubscribed={needsSubscription(client)} client={client} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
                     }
                     return (
-                      <GroupRow key={entry.key} entry={entry} expanded={isSearching || expandedGroups.has(entry.key)} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onToggle={() => toggleGroup(entry.key)} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)}>
+                      <GroupRow key={entry.key} unsubscribed={needsSubscription(entry.members[0])} entry={entry} expanded={isSearching || expandedGroups.has(entry.key)} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onToggle={() => toggleGroup(entry.key)} onMoveUp={() => moveEntry(entry.key, -1)} onMoveDown={() => moveEntry(entry.key, 1)}>
                         {entry.members.map((client, memberIndex) => (
-                          <ClientRow key={client.row} client={client} canMoveUp={memberIndex > 0} canMoveDown={memberIndex < entry.members.length - 1} onMoveUp={() => moveWithinGroup(entry, client, -1)} onMoveDown={() => moveWithinGroup(entry, client, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
+                          <ClientRow key={client.row} unsubscribed={needsSubscription(client)} client={client} canMoveUp={memberIndex > 0} canMoveDown={memberIndex < entry.members.length - 1} onMoveUp={() => moveWithinGroup(entry, client, -1)} onMoveDown={() => moveWithinGroup(entry, client, 1)} onOpen={() => setSelectedClient(client)} onEdit={() => openEdit(client)} onDelete={() => remove(client)} />
                         ))}
                       </GroupRow>
                     )
@@ -481,7 +484,7 @@ function summarize(values: string[], plural: string) {
   return values.length === 1 ? values[0] : `${values.length} ${plural}`
 }
 
-function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp, onMoveDown, children }: { entry: ClientEntry; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
+function GroupRow({ unsubscribed, entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp, onMoveDown, children }: { unsubscribed: boolean; entry: ClientEntry; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
   const { members } = entry
   const names = uniqueValues(members.map((member) => `${member.nombre} ${member.apellido}`))
   const products = uniqueValues(members.map((member) => member.producto))
@@ -507,7 +510,7 @@ function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp,
         <div className="min-w-0">
           <div className="text-xs text-adm-brand-foreground/50">Empresa</div>
           <div className="truncate text-sm font-semibold">{members[0].empresa}</div>
-          <div className="mt-1 text-[11px] text-adm-orange">{members.length} servicios</div>
+          <div className="mt-1 text-[11px] text-adm-orange">{members.length} servicios{unsubscribed && <SubscribeBadge />}</div>
         </div>
         <div className="hidden min-w-0 md:block" aria-hidden="true" />
         <div className="hidden min-w-0 md:block" aria-hidden="true" />
@@ -532,7 +535,7 @@ function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp,
   )
 }
 
-function ClientRow({ client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpen, onEdit, onDelete }: { client: SheetClient; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+function ClientRow({ unsubscribed, client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpen, onEdit, onDelete }: { unsubscribed: boolean; client: SheetClient; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
     <div
       role="button"
@@ -543,7 +546,7 @@ function ClientRow({ client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpe
     >
       <div className="col-span-6 min-w-0 pr-28 md:col-span-1 md:pr-0">
         <div className="hidden text-xs text-adm-brand-foreground/50 md:block">{clientLabel(client.nombre)}</div>
-        <div className="font-bold">{client.nombre} {client.apellido}</div>
+        <div className="font-bold">{client.nombre} {client.apellido}{unsubscribed && <SubscribeBadge />}</div>
         {client.telefono ? (
           <a href={`https://wa.me/${client.telefono.replace(/\D/g, '')}?text=${encodeURIComponent('Hola')}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 block truncate text-xs text-adm-brand-foreground/55 underline-offset-2 hover:text-adm-orange hover:underline">{client.telefono}</a>
         ) : <div className="mt-1 truncate text-xs text-adm-brand-foreground/55">Sin teléfono</div>}
@@ -587,4 +590,8 @@ function ClientRow({ client, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpe
       </div>
     </div>
   )
+}
+
+function SubscribeBadge() {
+  return <span className="ml-2 inline-block rounded-full bg-amber-400/90 px-2 py-0.5 align-middle text-[10px] font-bold text-black">Falta suscribir</span>
 }

@@ -26,9 +26,11 @@ export async function GET() {
   )
   const historial = Object.fromEntries(cobros)
   const pagos: Record<string, string> = {}
+  const suscriptos = new Set<string>()
   for (const item of results) {
     const empresa = item.status === 'authorized' ? MP_PAYER_TO_EMPRESA[[item.payer_first_name, item.payer_last_name].filter(Boolean).join(' ')] : undefined
     if (!empresa) continue
+    suscriptos.add(empresa)
     for (const cobro of historial[item.id] ?? []) {
       const day = String(cobro.fechaDebito ?? '').slice(0, 10)
       if (cobro.estado === 'processed' && day > (pagos[empresa] ?? '')) pagos[empresa] = day
@@ -36,6 +38,7 @@ export async function GET() {
   }
   return NextResponse.json({
     pagos,
+    suscriptos: [...suscriptos],
     total: body?.paging?.total ?? results.length,
     porEstado: results.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.status]: (acc[item.status] ?? 0) + 1 }), {}),
     campos: results[0] ? Object.keys(results[0]) : [],
