@@ -6,7 +6,7 @@ import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Downloa
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
 import { currentDueDate, nextPaymentDate } from '@/lib/admin/payments'
-import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
+import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 
 const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '' }
@@ -86,6 +86,7 @@ export function ClientsDashboard() {
   const [customPlan, setCustomPlan] = useState(false)
   const [error, setError] = useState('')
   const [toast, setToast] = useState<Toast | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
   const [busyRow, setBusyRow] = useState<string | null>(null)
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({})
   const [mpSubs, setMpSubs] = useState<Set<string> | null>(null)
@@ -227,7 +228,19 @@ export function ClientsDashboard() {
   async function markPaid(client: SheetClient) {
     const today = todayIso()
     const next = nextPaymentDate(client.metodoPago, today)
-    if (!window.confirm(`¿Registrar el pago de ${clean(client.empresa) || `${client.nombre} ${client.apellido}`} con fecha de hoy?${next ? ` El próximo pago queda para el ${formatDate(next)}.` : ''}`)) return
+    const hasSiblings = !!clean(client.empresa) && clients.some((other) => other.row !== client.row && other.empresa === client.empresa)
+    const who = `${clean(client.empresa) || `${client.nombre} ${client.apellido}`}${hasSiblings && clean(client.producto) ? ` · ${client.producto}` : ''}`
+    const ok = await confirm({
+      title: `¿Registrar el pago de ${who}?`,
+      message: (
+        <>
+          Queda como pagado hoy, {formatDate(today)}{clean(client.plan) ? ` (${client.plan})` : ''}.
+          {next && <> El próximo pago pasa al <strong className="font-semibold text-ink">{formatDate(next)}</strong>.</>}
+        </>
+      ),
+      confirmLabel: 'Registrar pago',
+    })
+    if (!ok) return
     setBusyRow(client.row)
     try {
       await send('PUT', { ...toInput(client), ultimoPago: today, proximoPago: next, row: client.row, expected: fingerprint(toInput(client)) })
@@ -278,10 +291,12 @@ export function ClientsDashboard() {
   async function remove(client: SheetClient) {
     // Si la empresa tiene otros servicios, se borra solo este servicio y el cliente sigue.
     const isService = !!clean(client.empresa) && clients.some((other) => other.row !== client.row && other.empresa === client.empresa)
-    const question = isService
-      ? `¿Eliminar el servicio "${clean(client.producto) || 'sin producto'}" de ${client.empresa}? Los demás servicios quedan. No se puede deshacer.`
-      : `¿Eliminar a ${client.nombre} ${client.apellido}${clean(client.empresa) ? ` (${client.empresa})` : ''}? No se puede deshacer.`
-    if (!window.confirm(question)) return
+    const ok = await confirm(
+      isService
+        ? { title: `¿Eliminar el servicio ${clean(client.producto) || 'sin producto'} de ${client.empresa}?`, message: 'Los demás servicios de la empresa quedan como están. Esto no se puede deshacer.', confirmLabel: 'Eliminar servicio', danger: true }
+        : { title: `¿Eliminar a ${client.nombre} ${client.apellido}?`, message: `${clean(client.empresa) ? `Se borra ${client.empresa} con todos sus datos. ` : ''}Esto no se puede deshacer.`, confirmLabel: 'Eliminar cliente', danger: true },
+    )
+    if (!ok) return
     setBusyRow(client.row)
     try {
       await send('DELETE', { row: client.row, expected: fingerprint(toInput(client)) })
@@ -536,6 +551,8 @@ export function ClientsDashboard() {
           </form>
         </Modal>
       )}
+
+      {confirmDialog}
 
       {toast && (
         <div role="status" className={`fixed inset-x-4 bottom-4 z-[70] mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-[0_20px_50px_-20px_rgba(11,19,34,0.5)] sm:inset-x-auto sm:right-6 ${toast.tone === 'ok' ? 'bg-ink' : 'bg-red-600'}`}>

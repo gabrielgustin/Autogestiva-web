@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { X } from 'lucide-react'
+import { AlertTriangle, CircleHelp, X } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { LogoutButton } from '@/components/admin/session-guard'
 
@@ -113,7 +113,7 @@ export function Badge({ tone = 'gray', children, className = '' }: { tone?: keyo
 export function Modal({ title, eyebrow, onClose, children, footer }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   useEffect(() => {
     // Escape con un calendario o una lista abiertos cierra solo ese desplegable, no la ventana.
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper]')) onClose() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper], [data-confirm-dialog]')) onClose() }
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onKey)
@@ -144,4 +144,43 @@ export function Modal({ title, eyebrow, onClose, children, footer }: { title: Re
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className="px-6 py-14 text-center text-sm text-muted-ink">{children}</div>
+}
+
+type ConfirmOptions = { title: string; message?: React.ReactNode; confirmLabel?: string; danger?: boolean }
+
+// Reemplaza a window.confirm con una ventana del panel: `const [confirm, confirmDialog] = useConfirm()`,
+// `if (!(await confirm({ title: '…' }))) return` y renderizar {confirmDialog} en el componente.
+export function useConfirm() {
+  const [pending, setPending] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(null)
+  const confirm = useCallback((options: ConfirmOptions) => new Promise<boolean>((resolve) => setPending({ ...options, resolve })), [])
+  const answer = (ok: boolean) => {
+    pending?.resolve(ok)
+    setPending(null)
+  }
+  const dialog = pending ? <ConfirmDialog {...pending} onAnswer={answer} /> : null
+  return [confirm, dialog] as const
+}
+
+function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', danger, onAnswer }: ConfirmOptions & { onAnswer: (ok: boolean) => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onAnswer(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onAnswer])
+  const Icon = danger ? AlertTriangle : CircleHelp
+  return (
+    <div data-confirm-dialog className="fixed inset-0 z-[90] flex items-end justify-center bg-ink/40 p-3 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onAnswer(false) }}>
+      <section role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="animate-rise-in w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] [animation-duration:220ms]">
+        <div className={`flex size-11 items-center justify-center rounded-2xl ${danger ? 'bg-red-50 text-red-600' : 'bg-brand-light text-brand'}`}>
+          <Icon className="size-5" aria-hidden="true" />
+        </div>
+        <h2 id="confirm-title" className="font-display mt-4 text-xl font-bold tracking-tight text-balance">{title}</h2>
+        {message && <div className="mt-2 text-sm leading-relaxed text-muted-ink">{message}</div>}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => onAnswer(false)} className={btn.secondary}>Cancelar</button>
+          <button type="button" autoFocus onClick={() => onAnswer(true)} className={danger ? `${btn.primary} bg-red-600 hover:bg-red-700 focus-visible:ring-red-500/30` : btn.primary}>{confirmLabel}</button>
+        </div>
+      </section>
+    </div>
+  )
 }

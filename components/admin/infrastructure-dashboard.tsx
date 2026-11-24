@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Activity, ArrowUpRight, Database, HardDrive, Pause, Play, RefreshCw, Server, Wallet } from 'lucide-react'
-import { AdminShell, Badge, EmptyState, PageHeader, Stat, btn, card } from '@/components/admin/ui'
+import { AdminShell, Badge, EmptyState, PageHeader, Stat, btn, card, useConfirm } from '@/components/admin/ui'
 import { MonthField } from '@/components/admin/pickers'
 
 type Cost = { compute: number; storage: number; restore: number; snapshots: number; branches: number; transfer: number; total: number }
@@ -45,6 +45,7 @@ export default function InfrastructureDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [controlling, setControlling] = useState<string | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
 
   const requestId = useRef(0)
   const load = useCallback(async (selectedMonth: string) => {
@@ -74,7 +75,14 @@ export default function InfrastructureDashboard() {
   async function controlCompute(project: Project, action: 'suspend' | 'start') {
     if (!project.endpointId) return
     const verb = action === 'suspend' ? 'suspender' : 'reactivar'
-    if (!window.confirm(`¿Querés ${verb} el compute de ${project.name}? No se eliminan datos; solo cambia el estado del servidor de la base.`)) return
+    const ok = await confirm({
+      title: `¿${action === 'suspend' ? 'Suspender' : 'Reactivar'} ${project.name}?`,
+      message: action === 'suspend'
+        ? 'La base deja de consumir compute hasta que alguien la vuelva a usar o la reactives. No se borra ningún dato.'
+        : 'El servidor de la base vuelve a encenderse. No cambia ningún dato.',
+      confirmLabel: action === 'suspend' ? 'Suspender' : 'Reactivar',
+    })
+    if (!ok) return
     setControlling(project.id)
     try {
       const response = await fetch('/api/administracion/neon/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: project.id, endpointId: project.endpointId, action }) })
@@ -222,6 +230,7 @@ export default function InfrastructureDashboard() {
         <Wallet className="size-3.5" aria-hidden="true" />
         {data?.syncedAt ? `Datos de Neon al ${new Date(data.syncedAt).toLocaleString('es-AR')}` : 'Conectando con Neon…'}
       </p>
+      {confirmDialog}
     </AdminShell>
   )
 }
