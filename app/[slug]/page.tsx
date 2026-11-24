@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { Check, Mail, MapPin, Phone } from "lucide-react"
+import { Mail, MapPin, Phone } from "lucide-react"
 import { Navbar } from "@/components/navbar"
 import { CtaButton, Eyebrow, Reveal } from "@/components/home/primitives"
 import { contact, projects } from "@/lib/site-data"
@@ -109,39 +109,6 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
                   <p className="mt-2.5 leading-relaxed text-muted-ink">{item.text}</p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Para quién + proceso */}
-        <section className="border-y border-line bg-white py-20 md:py-28">
-          <div className={`${container} grid gap-16 lg:grid-cols-2`}>
-            <div>
-              <Eyebrow>Para quién es</Eyebrow>
-              <h2 className="font-display h-section mt-5 text-balance">Pensado para tu tipo de negocio</h2>
-              <ul className="mt-8 space-y-4">
-                {service.forWho.map((item) => (
-                  <li key={item} className="flex items-start gap-3">
-                    <Check className="mt-1 h-5 w-5 shrink-0 text-orange-500" />
-                    <span className="text-lg leading-snug">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <Eyebrow>Cómo trabajamos</Eyebrow>
-              <h2 className="font-display h-section mt-5 text-balance">De la idea al lanzamiento en 3 pasos</h2>
-              <ol className="mt-8 space-y-6">
-                {service.steps.map((step, i) => (
-                  <li key={step.title} className="flex gap-5">
-                    <span className="font-mono text-sm text-orange-700">0{i + 1}</span>
-                    <div>
-                      <h3 className="font-display text-xl font-semibold tracking-tight">{step.title}</h3>
-                      <p className="mt-1.5 leading-relaxed text-muted-ink">{step.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
             </div>
           </div>
         </section>
