@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation'
 import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Download, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
-import { currentDueDate, nextPaymentDate } from '@/lib/admin/payments'
+import { chargesPeriodically, currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 
 const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '' }
-const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual']
+const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual', 'Ninguno']
 const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
 const CUSTOM_PLAN = '__personalizado'
 const isCustomPlan = (plan: string) => !!plan && !planOptions.includes(plan)
@@ -23,7 +23,7 @@ const formSections: { title: string; fields: (keyof ClientInput)[] }[] = [
   { title: 'Servicio', fields: ['producto', 'dominio', 'dominioVencimiento', 'servidor', 'baseDatos'] },
   { title: 'Cobro', fields: ['plan', 'metodoPago', 'ultimoPago'] },
 ]
-const requiredFields = new Set<keyof ClientInput>(['nombre', 'apellido', 'plan', 'metodoPago', 'ultimoPago'])
+const requiredFields = new Set<keyof ClientInput>(['nombre', 'apellido', 'plan'])
 
 // Fecha de hoy en hora local (AAAA-MM-DD); toISOString daría el día UTC.
 const todayIso = () => new Date().toLocaleDateString('sv-SE')
@@ -49,16 +49,27 @@ function normalizeText(value: string) {
   return value.trim().toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ')
 }
 
+// Agrupa los servicios del mismo cliente: misma empresa o misma persona (Daniel Fortuna con Boutique ITS y Santa Remera).
 function buildEntries(list: SheetClient[]): ClientEntry[] {
-  const entries = new Map<string, ClientEntry>()
+  const byKey = new Map<string, ClientEntry>()
+  const entries: ClientEntry[] = []
   for (const client of list) {
     const company = normalizeText(clean(client.empresa))
-    const key = company ? `empresa:${company}` : `fila:${client.row}`
-    const entry = entries.get(key)
-    if (entry) entry.members.push(client)
-    else entries.set(key, { key, members: [client] })
+    const person = normalizeText(`${client.nombre} ${client.apellido}`.trim())
+    const keys = [company && `empresa:${company}`, person && `persona:${person}`].filter(Boolean) as string[]
+    const found = [...new Set(keys.map((key) => byKey.get(key)).filter(Boolean) as ClientEntry[])]
+    let entry = found[0]
+    if (!entry) entries.push((entry = { key: keys[0] ?? `fila:${client.row}`, members: [] }))
+    // Si este servicio une dos grupos que venían separados, se juntan en el primero.
+    for (const other of found.slice(1)) {
+      entry.members.push(...other.members)
+      entries.splice(entries.indexOf(other), 1)
+      for (const [key, value] of byKey) if (value === other) byKey.set(key, entry)
+    }
+    entry.members.push(client)
+    for (const key of keys) byKey.set(key, entry)
   }
-  return [...entries.values()]
+  return entries
 }
 
 const planAmount = (plan: string) => Number.parseInt(plan.replace(/[^0-9]/g, ''), 10) || 0
@@ -154,7 +165,8 @@ export function ClientsDashboard() {
   const totalEntries = useMemo(() => buildEntries(clients).length, [clients])
   const isFiltering = query.trim() !== '' || plan !== 'all' || servidor !== 'all'
   // Cliente con plan que todavía no tiene suscripción en Mercado Pago (solo si la consulta respondió).
-  const needsSubscription = (client: SheetClient) => !!mpSubs && !!clean(client.plan) && !mpSubs.has(client.empresa)
+  const needsSubscription = (client: SheetClient) => !!mpSubs && !!clean(client.plan) && isAutoDebit(client.metodoPago) && !mpSubs.has(client.empresa)
+  const mpPaidFor = (client: SheetClient) => (isAutoDebit(client.metodoPago) ? mpPaid[client.empresa] ?? '' : '')
   const mpConfirmed = Object.keys(mpPaid).length
   const unsubscribed = mpSubs ? new Set(clients.filter(needsSubscription).map((client) => clean(client.empresa) || client.row)).size : 0
   const firstLoad = loading && clients.length === 0
@@ -209,7 +221,9 @@ export function ClientsDashboard() {
   async function save(event: React.FormEvent) {
     event.preventDefault()
     // Los selectores propios no usan la validación nativa: se revisan acá los obligatorios.
-    const missing = [...requiredFields].filter((field) => !form[field].trim()).map((field) => (field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]))
+    // La fecha del último pago solo hace falta si hay un cobro periódico (con "Ninguno" o vacío, no).
+    const required = chargesPeriodically(form.metodoPago) ? [...requiredFields, 'ultimoPago' as const] : [...requiredFields]
+    const missing = required.filter((field) => !form[field].trim()).map((field) => (field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]))
     if (missing.length) return setFormError(`Completá: ${missing.join(', ')}.`)
     setSaving(true)
     setFormError('')
@@ -314,7 +328,7 @@ export function ClientsDashboard() {
     client,
     busy: busyRow === client.row,
     unsubscribed: needsSubscription(client),
-    paidByMp: mpPaid[client.empresa] ?? '',
+    paidByMp: mpPaidFor(client),
     onOpen: () => setSelectedClient(client),
     onEdit: () => openEdit(client),
     onDelete: () => remove(client),
@@ -431,7 +445,7 @@ export function ClientsDashboard() {
               const order = { canMoveUp: entryIndex > 0, canMoveDown: entryIndex < visibleEntries.length - 1, onMoveUp: () => moveEntry(entry.key, -1), onMoveDown: () => moveEntry(entry.key, 1) }
               if (entry.members.length === 1) return <ClientRow key={entry.key} {...rowProps(entry.members[0])} {...order} />
               return (
-                <GroupRow key={entry.key} entry={entry} unsubscribed={needsSubscription(entry.members[0])} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} onAddService={() => openNew(entry.members[0])} {...order}>
+                <GroupRow key={entry.key} entry={entry} unsubscribed={entry.members.some(needsSubscription)} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} onAddService={() => openNew(entry.members[0])} {...order}>
                   {entry.members.map((client, memberIndex) => (
                     <ClientRow
                       key={client.row}
@@ -460,7 +474,7 @@ export function ClientsDashboard() {
           client={selectedClient}
           busy={busyRow === selectedClient.row}
           unsubscribed={needsSubscription(selectedClient)}
-          paidByMp={mpPaid[selectedClient.empresa] ?? ''}
+          paidByMp={mpPaidFor(selectedClient)}
           onClose={closeDetails}
           onEdit={() => openEdit(selectedClient)}
           onAddService={() => openNew(selectedClient)}
@@ -489,7 +503,7 @@ export function ClientsDashboard() {
                   {section.fields.map((field) => (
                     <div key={field} className="text-xs font-semibold text-ink/70">
                       {field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]}
-                      {requiredFields.has(field) && <span className="text-orange-600"> *</span>}
+                      {(requiredFields.has(field) || (field === 'ultimoPago' && chargesPeriodically(form.metodoPago))) && <span className="text-orange-600"> *</span>}
                       <div className="mt-1.5">
                         {field === 'plan' ? (
                           <div className="grid gap-2">
@@ -673,7 +687,7 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   const names = [...new Set(members.map((member) => `${member.nombre} ${member.apellido}`))]
   const products = [...new Set(members.map((member) => clean(member.producto)).filter(Boolean))]
   const totalPlan = members.reduce((total, member) => total + planAmount(member.plan), 0)
-  const company = members[0].empresa
+  const company = [...new Set(members.map((member) => clean(member.empresa)).filter(Boolean))].join(' · ')
   return (
     <div>
       <div

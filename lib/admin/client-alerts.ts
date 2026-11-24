@@ -1,5 +1,5 @@
 import type { SheetClient } from '@/lib/admin/clients-shared'
-import { currentDueDate } from '@/lib/admin/payments'
+import { currentDueDate, isAutoDebit } from '@/lib/admin/payments'
 
 export const DOMAIN_WARNING_DAYS = 60
 export const PAYMENT_WARNING_DAYS = 10
@@ -41,7 +41,7 @@ export function buildClientAlerts(clients: SheetClient[], today = new Date(), pa
       seenDomains.add(domainKey)
       alerts.push({ id: `dominio-${client.row}`, type: 'dominio', cliente, detalle: client.dominio, date: client.dominioVencimiento, days: domainDays })
     }
-    const due = currentDueDate(client.metodoPago, client.proximoPago, paidThrough[cliente])
+    const due = currentDueDate(client.metodoPago, client.proximoPago, isAutoDebit(client.metodoPago) ? paidThrough[cliente] : '')
     const paymentDays = daysUntil(due, today)
     if (paymentDays !== null && paymentDays <= PAYMENT_WARNING_DAYS) {
       alerts.push({ id: `pago-${client.row}`, type: 'pago', cliente, detalle: [client.producto, client.plan].filter((value) => value && value !== '-').join(' · ') || 'Pago', date: due, days: paymentDays })
