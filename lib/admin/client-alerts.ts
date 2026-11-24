@@ -1,4 +1,5 @@
 import type { SheetClient } from '@/lib/admin/clients-shared'
+import { currentDueDate } from '@/lib/admin/payments'
 
 export const DOMAIN_WARNING_DAYS = 60
 export const PAYMENT_WARNING_DAYS = 10
@@ -28,8 +29,7 @@ function daysUntil(isoDate: string, today: Date) {
 }
 
 // Domains expiring within DOMAIN_WARNING_DAYS and payments due within PAYMENT_WARNING_DAYS (overdue included), soonest first.
-// `paidThrough`: último cobro confirmado por Mercado Pago por empresa (YYYY-MM-DD). Un cobro dentro del mes del vencimiento
-// (aunque sea antes del día, p. ej. cobró el 2 y vence el 10) o posterior lo cubre y no genera aviso.
+// `paidThrough`: último cobro confirmado por Mercado Pago por empresa (YYYY-MM-DD); el aviso usa el vencimiento vigente (ver currentDueDate).
 export function buildClientAlerts(clients: SheetClient[], today = new Date(), paidThrough: Record<string, string> = {}): ClientAlert[] {
   const alerts: ClientAlert[] = []
   const seenDomains = new Set<string>()
@@ -41,9 +41,10 @@ export function buildClientAlerts(clients: SheetClient[], today = new Date(), pa
       seenDomains.add(domainKey)
       alerts.push({ id: `dominio-${client.row}`, type: 'dominio', cliente, detalle: client.dominio, date: client.dominioVencimiento, days: domainDays })
     }
-    const paymentDays = daysUntil(client.proximoPago, today)
-    if (paymentDays !== null && paymentDays <= PAYMENT_WARNING_DAYS && !((paidThrough[cliente] ?? '') >= `${client.proximoPago.slice(0, 8)}01`)) {
-      alerts.push({ id: `pago-${client.row}`, type: 'pago', cliente, detalle: [client.producto, client.plan].filter((value) => value && value !== '-').join(' · ') || 'Pago', date: client.proximoPago, days: paymentDays })
+    const due = currentDueDate(client.metodoPago, client.proximoPago, paidThrough[cliente])
+    const paymentDays = daysUntil(due, today)
+    if (paymentDays !== null && paymentDays <= PAYMENT_WARNING_DAYS) {
+      alerts.push({ id: `pago-${client.row}`, type: 'pago', cliente, detalle: [client.producto, client.plan].filter((value) => value && value !== '-').join(' · ') || 'Pago', date: due, days: paymentDays })
     }
   }
   return alerts.sort((a, b) => a.days - b.days)

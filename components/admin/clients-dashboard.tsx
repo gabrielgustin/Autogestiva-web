@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Download, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
-import { nextPaymentDate } from '@/lib/admin/payments'
+import { currentDueDate, nextPaymentDate } from '@/lib/admin/payments'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 
@@ -629,7 +629,7 @@ function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, ca
         </div>
         <Cell label="Dominio" className="order-5 col-span-2 md:order-none md:col-span-1" extra={client.dominioVencimiento ? `Vence ${formatDate(client.dominioVencimiento)}` : ''}>{clean(client.dominio) || '—'}</Cell>
         <Cell label="Servidor" className="order-4 md:order-none" extra={clean(client.baseDatos) ? `Base: ${client.baseDatos}` : ''}>{clean(client.servidor) || '—'}</Cell>
-        <Cell label="Plan" className="order-2 md:order-none" extra={client.proximoPago ? `Próx. ${formatDate(client.proximoPago)}` : ''} strong>{clean(client.plan) || '—'}</Cell>
+        <Cell label="Plan" className="order-2 md:order-none" extra={client.proximoPago ? `Próx. ${formatDate(currentDueDate(client.metodoPago, client.proximoPago, paidByMp))}` : ''} strong>{clean(client.plan) || '—'}</Cell>
       </div>
 
       <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
@@ -699,7 +699,7 @@ function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, 
   const groups: { title: string; items: [string, string][] }[] = [
     { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
     { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
-    { title: 'Cobro', items: [['Plan', clean(client.plan)], ['Método de pago', clean(client.metodoPago)], ['Último pago', formatDate(client.ultimoPago)], ['Próximo pago', formatDate(client.proximoPago)]] },
+    { title: 'Cobro', items: [['Plan', clean(client.plan)], ['Método de pago', clean(client.metodoPago)], ['Último pago', formatDate(paidByMp > client.ultimoPago ? paidByMp : client.ultimoPago)], ['Próximo pago', formatDate(currentDueDate(client.metodoPago, client.proximoPago, paidByMp))]] },
   ]
   return (
     <Modal

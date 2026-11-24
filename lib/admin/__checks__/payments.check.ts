@@ -1,6 +1,6 @@
 // Autocontrol: npx tsx lib/admin/__checks__/payments.check.ts
 import assert from 'node:assert/strict'
-import { nextPaymentDate } from '../payments'
+import { currentDueDate, nextPaymentDate } from '../payments'
 import { buildClientAlerts } from '../client-alerts'
 
 assert.equal(nextPaymentDate('Débito Automático', '2026-11-24'), '2026-12-10')
@@ -21,4 +21,13 @@ assert.equal(buildClientAlerts([client('Life Gym', '2026-11-10')], today, { 'Lif
 assert.equal(buildClientAlerts([client('Pipet Labor', '2026-11-10')], today, { 'Pipet Labor': '2026-11-02' }).length, 0)
 // Cobro del mes anterior: no cubre.
 assert.equal(buildClientAlerts([client('Pipet Labor', '2026-11-10')], today, { 'Pipet Labor': '2026-10-30' }).length, 1)
+// Vencimiento vigente
+assert.equal(currentDueDate('Débito Automático', '2026-11-10', '2026-11-12'), '2026-12-10') // Life Gym: cobró el 12/11
+assert.equal(currentDueDate('Débito Automático', '2026-11-10', '2026-11-02'), '2026-12-10') // Pipet Labor: cobró el 2/11
+assert.equal(currentDueDate('Débito Automático', '2026-10-10', '2026-11-12'), '2026-12-10') // fecha guardada vieja: avanza dos meses
+assert.equal(currentDueDate('Débito Automático', '2026-11-10', '2026-10-12'), '2026-11-10') // cobro del mes anterior: sigue debiendo
+assert.equal(currentDueDate('Pago mensual', '2026-11-10', ''), '2026-11-10') // sin Mercado Pago: la fecha guardada
+// En el aviso, la fecha es la vigente
+const due = buildClientAlerts([client('Life Gym', '2026-11-10')], new Date(2026, 11, 5), { 'Life Gym': '2026-11-12' })
+assert.equal(due[0]?.date, '2026-12-10')
 console.log('payments.check ok')
