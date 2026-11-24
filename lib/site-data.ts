@@ -297,6 +297,14 @@ export const clients: Client[] = [
     tall: true,
   },
   {
+    name: "MAHGA Marketing & Eventos",
+    logo: "/images/clients/mahga.png",
+    url: "https://mahga-minijuegos.vercel.app",
+    tile: "#000000",
+    keepColor: true,
+    tall: true,
+  },
+  {
     name: "Colegio UTN",
     logo: "/images/clients/colegio-utn.png",
     url: "#",
