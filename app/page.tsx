@@ -30,7 +30,7 @@ export default function HomePage() {
   const [activeField, setActiveField] = useState<ChatField>(null)
   const whatsappRef = useRef<HTMLAnchorElement>(null)
   const footerBarRef = useRef<HTMLDivElement>(null)
-  const ctaRef = useRef<HTMLElement>(null)
+  const contactRef = useRef<HTMLElement>(null)
 
   // El botón de WhatsApp acompaña el scroll y se frena 16px arriba de la línea del copyright
   useEffect(() => {
@@ -41,10 +41,9 @@ export default function HomePage() {
       const base = window.innerWidth >= 768 ? 24 : 20
       const lift = window.innerHeight - bar.getBoundingClientRect().top + 16
       button.style.bottom = `${Math.max(base, lift)}px`
-      // Sobre la franja azul del CTA se esfuma (se confunde con el fondo) y vuelve al salir
-      const cta = ctaRef.current?.getBoundingClientRect()
-      const b = button.getBoundingClientRect()
-      const over = !!cta && b.bottom > cta.top && b.top < cta.bottom
+      // Desde "Hablemos de tu proyecto" hasta el footer se esfuma (ahí ya está el formulario) y vuelve al subir
+      const contact = contactRef.current?.getBoundingClientRect()
+      const over = !!contact && button.getBoundingClientRect().bottom > contact.top
       button.dataset.hidden = String(over)
       button.inert = over
     }
@@ -160,7 +159,7 @@ export default function HomePage() {
         </section>
 
         {/* ── CTA band ─────────────────────────────────────────── */}
-        <section ref={ctaRef} className="relative overflow-hidden bg-brand py-24 text-white md:py-32">
+        <section className="relative overflow-hidden bg-brand py-24 text-white md:py-32">
           <div className="bg-blueprint-inv pointer-events-none absolute inset-0" />
           <div
             className="pointer-events-none absolute -bottom-40 -right-20 h-[620px] w-[620px]"
@@ -186,7 +185,7 @@ export default function HomePage() {
         </section>
 
         {/* ── Contact ──────────────────────────────────────────── */}
-        <section id="contacto" className="scroll-mt-20 py-24 md:py-32">
+        <section ref={contactRef} id="contacto" className="scroll-mt-20 py-24 md:py-32">
           <div className={`${container} grid grid-cols-1 gap-14 lg:grid-cols-2 lg:gap-20`}>
             <Reveal className="flex h-full flex-col">
               <Eyebrow>Contacto</Eyebrow>
