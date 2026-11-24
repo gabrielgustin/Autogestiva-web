@@ -1,7 +1,7 @@
 import type React from "react"
 import "./globals.css"
 import type { Metadata, Viewport } from "next"
-import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google"
+import { Bricolage_Grotesque, Geist, Geist_Mono, Space_Grotesk } from "next/font/google"
 import { contact } from "@/lib/site-data"
 
 const SITE_URL = "https://www.autogestiva.com.ar"
@@ -18,7 +18,7 @@ const jsonLd = {
       "@id": `${SITE_URL}/#empresa`,
       name: "Autogestiva",
       url: SITE_URL,
-      logo: `${SITE_URL}/images/logo-autogestiva.png`,
+      logo: `${SITE_URL}/images/logo-icono.png`,
       image: `${SITE_URL}/og.png`,
       description: DESCRIPTION,
       email: contact.email,
@@ -55,6 +55,8 @@ const jsonLd = {
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" })
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" })
+// Tipografía del logo
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-space", display: "swap" })
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
   variable: "--font-bricolage",
@@ -119,7 +121,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`scroll-smooth bg-paper ${geist.variable} ${geistMono.variable} ${bricolage.variable}`}
+      className={`scroll-smooth bg-paper ${geist.variable} ${geistMono.variable} ${bricolage.variable} ${spaceGrotesk.variable}`}
     >
       <body className={geist.className}>
         <script

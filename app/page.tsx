@@ -4,6 +4,7 @@ import type React from "react"
 import { useEffect, useRef, useState } from "react"
 import { Check, Mail, MapPin, Phone } from "lucide-react"
 import { Navbar } from "@/components/navbar"
+import { Logo } from "@/components/logo"
 import { Hero } from "@/components/home/hero"
 import { ProjectsGallery } from "@/components/home/projects-gallery"
 import { ProcessTimeline } from "@/components/home/process-timeline"
@@ -282,16 +283,7 @@ export default function HomePage() {
         <div className={`${container} relative pb-10 pt-20`}>
           <div className="grid grid-cols-1 gap-12 md:grid-cols-12">
             <div className="md:col-span-5">
-              <img
-                src="/images/logo-autogestiva.png"
-                alt="Logo Autogestiva"
-                width={380}
-                height={151}
-                className="-ml-1 h-[72px] w-auto"
-                style={{ filter: "brightness(0) invert(1)" }}
-                loading="lazy"
-                decoding="async"
-              />
+              <Logo dark className="-ml-0.5 h-[56px]" />
               <p className="mt-5 max-w-sm leading-relaxed text-white/70">
                 Desarrollo web y sistemas de gestión a medida.
               </p>

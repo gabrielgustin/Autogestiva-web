@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Menu, X, ChevronDown, ArrowRight, ArrowUpRight } from "lucide-react"
 import { navServices } from "@/lib/site-data"
+import { Logo } from "@/components/logo"
 
 const links = [
   { label: "Proyectos", href: "/#proyectos", id: "proyectos" },
@@ -97,14 +98,10 @@ export function Navbar() {
       >
         <div className="flex items-center gap-6">
           <Link className="flex shrink-0 items-center" href="/" onClick={closeAll}>
-            <img
-              src="/images/logo-autogestiva.png"
-              alt="Logo Autogestiva"
-              width={380}
-              height={151}
-              fetchPriority="high"
-              className={`-ml-1 w-auto transition-[height] duration-300 ${
-                floating ? "h-[46px] md:h-[56px]" : "h-[58px] md:h-[66px]"
+            <Logo
+              bg={floating ? "#ffffff" : "#f6f4ef"}
+              className={`-ml-0.5 transition-[height] duration-300 ${
+                floating ? "h-[34px] md:h-[40px]" : "h-[40px] md:h-[46px]"
               }`}
             />
             <span className="sr-only">Autogestiva</span>
