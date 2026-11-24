@@ -30,6 +30,7 @@ export default function HomePage() {
   const [activeField, setActiveField] = useState<ChatField>(null)
   const whatsappRef = useRef<HTMLAnchorElement>(null)
   const footerBarRef = useRef<HTMLDivElement>(null)
+  const ctaRef = useRef<HTMLElement>(null)
 
   // El botón de WhatsApp acompaña el scroll y se frena 16px arriba de la línea del copyright
   useEffect(() => {
@@ -40,6 +41,12 @@ export default function HomePage() {
       const base = window.innerWidth >= 768 ? 24 : 20
       const lift = window.innerHeight - bar.getBoundingClientRect().top + 16
       button.style.bottom = `${Math.max(base, lift)}px`
+      // Sobre la franja azul del CTA se esfuma (se confunde con el fondo) y vuelve al salir
+      const cta = ctaRef.current?.getBoundingClientRect()
+      const b = button.getBoundingClientRect()
+      const over = !!cta && b.bottom > cta.top && b.top < cta.bottom
+      button.dataset.hidden = String(over)
+      button.inert = over
     }
     update()
     window.addEventListener("scroll", update, { passive: true })
@@ -153,7 +160,7 @@ export default function HomePage() {
         </section>
 
         {/* ── CTA band ─────────────────────────────────────────── */}
-        <section className="relative overflow-hidden bg-brand py-24 text-white md:py-32">
+        <section ref={ctaRef} className="relative overflow-hidden bg-brand py-24 text-white md:py-32">
           <div className="bg-blueprint-inv pointer-events-none absolute inset-0" />
           <div
             className="pointer-events-none absolute -bottom-40 -right-20 h-[620px] w-[620px]"
@@ -322,7 +329,7 @@ export default function HomePage() {
         rel="noopener noreferrer"
         ref={whatsappRef}
         aria-label="Contactar por WhatsApp"
-        className="fixed bottom-5 right-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-xl shadow-green-500/30 transition-transform duration-300 hover:scale-110 hover:bg-green-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-500/40 md:bottom-6 md:right-6"
+        className="fixed bottom-5 right-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-xl shadow-green-500/30 transition-[scale,rotate,opacity,filter,background-color] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-110 data-[hidden=true]:pointer-events-none data-[hidden=true]:-rotate-45 data-[hidden=true]:scale-[0.2] data-[hidden=true]:opacity-0 data-[hidden=true]:blur-md data-[hidden=true]:ease-[cubic-bezier(0.55,0,1,0.45)] motion-reduce:transition-opacity hover:bg-green-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-500/40 md:bottom-6 md:right-6"
       >
         <WhatsAppIcon className="h-7 w-7" />
       </a>
