@@ -48,6 +48,8 @@ function verifySessionToken(token: string | undefined) {
 }
 
 export async function getAdminSession() {
+  // Solo en `next dev` y con la variable en .env.local (ignorado por git): entra sin pedir contraseña. En Vercel NODE_ENV es production, así que nunca aplica.
+  if (process.env.NODE_ENV === 'development' && process.env.ADMIN_DEV_BYPASS === '1') return { id: 'dev-local' }
   const store = await cookies()
   return verifySessionToken(store.get(SESSION_COOKIE)?.value)
 }

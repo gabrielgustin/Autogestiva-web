@@ -250,19 +250,19 @@ export function ClientsDashboard() {
             </Link>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <button onClick={load} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} disabled={loading} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 px-3' : 'px-5'} inline-flex h-10 items-center justify-center gap-2 rounded-full bg-adm-orange text-sm font-semibold text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`}>
+            <button onClick={load} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} disabled={loading} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 px-3' : 'px-3 sm:px-5'} inline-flex h-8 items-center justify-center gap-2 rounded-full bg-adm-orange text-xs sm:h-10 sm:text-sm font-semibold text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`}>
               <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               <span className={hasScrolled ? 'sr-only' : ''}>Actualizar</span>
             </button>
-            <a href="/api/administracion/clients/export" download className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-adm-brand-foreground/20 px-4 text-sm font-bold hover:bg-adm-brand-foreground/10"><Download className="size-4" aria-hidden="true" />Exportar CSV</a>
-            <LogoutButton />
+            <a href="/api/administracion/clients/export" download className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-adm-brand-foreground/20 px-3 text-xs font-bold hover:bg-adm-brand-foreground/10 sm:h-10 sm:px-4 sm:text-sm"><Download className="size-4" aria-hidden="true" />Exportar CSV</a>
+            <LogoutButton className="!h-8 !gap-1.5 !px-3 !text-xs sm:!h-10 sm:!px-4 sm:!text-sm" />
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-3 py-5 sm:px-4 sm:py-8 md:px-10">
         <>
-            <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
               <Stat label="Clientes totales" value={totalEntries} icon={<UserRound />} />
               <Stat label="Productos activos" value={activeProducts} icon={<CircleDollarSign />} />
               <Stat label="Recaudación mensual estimada" value={`$${Math.round(monthlyRevenue).toLocaleString('es-AR')}`} icon={<CircleDollarSign />} />
@@ -284,8 +284,8 @@ export function ClientsDashboard() {
                 <div className="text-xs font-bold uppercase tracking-[0.16em] text-adm-orange">Vencimientos · {alerts.length} {alerts.length === 1 ? 'aviso' : 'avisos'}</div>
                 <ul className="mt-3 grid gap-2 text-sm md:grid-cols-2">
                   {alerts.map((alert) => (
-                    <li key={alert.id} className="flex items-start justify-between gap-3 rounded-lg border border-adm-brand-foreground/10 bg-adm-brand/40 px-3 py-2">
-                      <span className="min-w-0"><span className="font-semibold">{alert.cliente}</span><span className="block truncate text-xs text-adm-brand-foreground/60">{alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}</span></span>
+                    <li key={alert.id} className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-adm-brand-foreground/10 bg-adm-brand/40 px-3 py-2">
+                      <span className="min-w-0"><span className="font-semibold">{alert.cliente}</span><span className="block text-xs text-adm-brand-foreground/60 sm:truncate">{alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}</span></span>
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${alert.days < 0 ? 'bg-red-500/80 text-white' : 'bg-adm-orange text-adm-orange-foreground'}`}>{describeDays(alert.days)}</span>
                     </li>
                   ))}
@@ -349,7 +349,7 @@ export function ClientsDashboard() {
       )}
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/60 p-2 sm:p-4 md:p-10">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 p-2 sm:p-4 md:p-10">
           <form onSubmit={save} className="w-full max-w-2xl rounded-2xl border border-adm-brand-foreground/15 bg-adm-brand p-4 shadow-2xl sm:p-6">
             <div className="mb-6 flex items-center justify-between">
               <div>
@@ -414,10 +414,10 @@ function SelectFilter({ value, onChange, allLabel, options }: { value: string; o
 
 function Stat({ label, value, icon }: { label: string; value: React.ReactNode; icon: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 p-5">
-      <div className="mb-4 flex size-9 items-center justify-center rounded-lg bg-adm-orange text-adm-orange-foreground">{icon}</div>
-      <div className="text-sm text-adm-brand-foreground/65">{label}</div>
-      <div className="mt-1 text-3xl font-black">{value}</div>
+    <div className="rounded-xl border border-adm-brand-foreground/15 bg-adm-brand-foreground/10 p-4 sm:p-5">
+      <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-adm-orange text-adm-orange-foreground">{icon}</div>
+      <div className="text-xs text-adm-brand-foreground/65 sm:text-sm">{label}</div>
+      <div className="mt-1 text-xl font-black sm:text-3xl">{value}</div>
     </div>
   )
 }
@@ -440,7 +440,7 @@ function ClientDetails({ client, onClose }: { client: SheetClient; onClose: () =
   ]
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-adm-brand/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-adm-brand/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <section role="dialog" aria-modal="true" aria-labelledby="client-details-title" className="w-full max-w-2xl rounded-2xl border border-adm-brand-foreground/15 bg-adm-brand p-5 shadow-2xl sm:p-7">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -505,10 +505,10 @@ function GroupRow({ entry, expanded, canMoveUp, canMoveDown, onToggle, onMoveUp,
           <div className="truncate text-sm font-semibold">{members[0].empresa}</div>
           <div className="mt-1 text-[11px] text-adm-orange">{members.length} servicios</div>
         </div>
-        <div className="min-w-0" aria-hidden="true" />
-        <div className="min-w-0" aria-hidden="true" />
-        <div className="min-w-0" aria-hidden="true" />
-        <div className="min-w-0" aria-hidden="true" />
+        <div className="hidden min-w-0 md:block" aria-hidden="true" />
+        <div className="hidden min-w-0 md:block" aria-hidden="true" />
+        <div className="hidden min-w-0 md:block" aria-hidden="true" />
+        <div className="hidden min-w-0 md:block" aria-hidden="true" />
         <div className="min-w-0 self-start">
           <div className="min-h-4 text-xs leading-4 text-adm-brand-foreground/50">Plan (total)</div>
           <div className="font-semibold leading-6 text-adm-orange">{totalPlan ? `$${totalPlan.toLocaleString('es-AR')}` : '—'}</div>

@@ -99,14 +99,14 @@ export default function Page() {
   return <main className="min-h-screen overflow-x-hidden bg-adm-brand text-adm-brand-foreground" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px)', backgroundSize: '42px 42px' }}>
     <div className="relative overflow-visible bg-transparent text-adm-brand-foreground">
       <div className="relative mx-auto max-w-7xl px-4 pb-4 pt-6 sm:px-6 md:px-10 md:pb-6 md:pt-16">
-        <div className="flex w-full items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 py-1.5 text-xs font-semibold text-adm-brand-foreground">Infraestructura</span>
-            <Link href="/administracion/clientes" className="rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 py-1.5 text-xs font-semibold text-adm-brand-foreground hover:bg-adm-brand-foreground/15">Clientes</Link>
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="inline-flex h-8 items-center rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 text-xs font-semibold text-adm-brand-foreground sm:h-10 sm:px-5 sm:text-sm">Infraestructura</span>
+            <Link href="/administracion/clientes" className="inline-flex h-8 items-center rounded-full border border-adm-brand-foreground/20 bg-adm-brand-foreground/10 px-3 text-xs font-semibold text-adm-brand-foreground hover:bg-adm-brand-foreground/15 sm:h-10 sm:px-5 sm:text-sm">Clientes</Link>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => load()} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 !h-10 !w-10 !min-w-0 !flex-none !p-0' : 'px-2 sm:px-5'} inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-adm-orange text-[11px] font-semibold sm:h-10 sm:flex-none sm:gap-2 sm:text-sm text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`} disabled={loading}><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /><span className={hasScrolled ? 'sr-only' : ''}>{loading ? 'Sincronizando' : 'Actualizar'}</span></button>
-            <LogoutButton className="h-9 px-2 text-[11px] sm:h-10 sm:px-4" />
+            <button onClick={() => load()} aria-label={loading ? 'Sincronizando' : 'Actualizar datos'} className={`${hasScrolled ? 'fixed right-3 top-3 z-50 !h-10 !w-10 !min-w-0 !flex-none !p-0' : 'px-3 sm:px-5'} inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-full bg-adm-orange text-xs font-semibold sm:h-10 sm:gap-2 sm:text-sm text-adm-orange-foreground transition-all duration-300 hover:-translate-y-0.5 disabled:opacity-50`} disabled={loading}><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /><span className={hasScrolled ? 'sr-only' : ''}>{loading ? 'Sincronizando' : 'Actualizar'}</span></button>
+            <LogoutButton className="!h-8 !gap-1.5 !px-3 !text-xs sm:!h-10 sm:!px-5 sm:!text-sm" />
           </div>
         </div>
       </div>

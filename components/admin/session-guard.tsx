@@ -19,7 +19,8 @@ export async function endSession() {
 export function SessionGuard() {
   useEffect(() => {
     // sessionStorage is private to a tab and wiped when it closes, so a missing marker means a new tab or a returning browser.
-    if (!sessionStorage.getItem(TAB_MARKER)) {
+    const devBypass = process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ADMIN_DEV_BYPASS === '1'
+    if (!devBypass && !sessionStorage.getItem(TAB_MARKER)) {
       fetch('/api/administracion/logout', { method: 'POST', keepalive: true }).finally(() => window.location.replace('/administracion/login'))
       return
     }
