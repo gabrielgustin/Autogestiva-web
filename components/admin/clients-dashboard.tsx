@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Download, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
 import { chargesPeriodically, currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
@@ -205,7 +205,8 @@ export function ClientsDashboard() {
   function update(field: keyof ClientInput, value: string) {
     setForm((current) => {
       const next = { ...current, [field]: value }
-      if (field === 'metodoPago' || field === 'ultimoPago') next.proximoPago = nextPaymentDate(next.metodoPago, next.ultimoPago)
+      // Se sugiere el próximo pago con el método y el último pago, pero se puede fijar a mano (cliente que empieza a pagar más adelante).
+      if (field === 'metodoPago' || field === 'ultimoPago') next.proximoPago = nextPaymentDate(next.metodoPago, next.ultimoPago) || (chargesPeriodically(next.metodoPago) ? next.proximoPago : '')
       return next
     })
   }
@@ -221,9 +222,7 @@ export function ClientsDashboard() {
   async function save(event: React.FormEvent) {
     event.preventDefault()
     // Los selectores propios no usan la validación nativa: se revisan acá los obligatorios.
-    // La fecha del último pago solo hace falta si hay un cobro periódico (con "Ninguno" o vacío, no).
-    const required = chargesPeriodically(form.metodoPago) ? [...requiredFields, 'ultimoPago' as const] : [...requiredFields]
-    const missing = required.filter((field) => !form[field].trim()).map((field) => (field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]))
+    const missing = [...requiredFields].filter((field) => !form[field].trim()).map((field) => COLUMN_LABELS[field])
     if (missing.length) return setFormError(`Completá: ${missing.join(', ')}.`)
     setSaving(true)
     setFormError('')
@@ -341,10 +340,6 @@ export function ClientsDashboard() {
           <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           {loading ? 'Actualizando' : 'Actualizar'}
         </button>
-        <a href="/api/administracion/clients/export" download className={btn.secondary}>
-          <Download className="size-4" aria-hidden="true" />
-          Exportar CSV
-        </a>
         <button type="button" onClick={() => openNew()} className={btn.accent}>
           <Plus className="size-4" aria-hidden="true" />
           Nuevo cliente
@@ -503,7 +498,7 @@ export function ClientsDashboard() {
                   {section.fields.map((field) => (
                     <div key={field} className="text-xs font-semibold text-ink/70">
                       {field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]}
-                      {(requiredFields.has(field) || (field === 'ultimoPago' && chargesPeriodically(form.metodoPago))) && <span className="text-orange-600"> *</span>}
+                      {requiredFields.has(field) && <span className="text-orange-600"> *</span>}
                       <div className="mt-1.5">
                         {field === 'plan' ? (
                           <div className="grid gap-2">
@@ -552,9 +547,9 @@ export function ClientsDashboard() {
                   ))}
                   {section.title === 'Cobro' && (
                     <div className="text-xs font-semibold text-ink/70">
-                      Próximo pago
-                      <div className="mt-1.5 flex h-11 items-center rounded-xl border border-dashed border-line bg-paper px-3 text-sm font-normal text-ink">
-                        {form.proximoPago ? formatDate(form.proximoPago) : <span className="text-ink/40">Se calcula con el método y la fecha</span>}
+                      Fecha del próximo pago
+                      <div className="mt-1.5 font-normal">
+                        <DateField ariaLabel="Fecha del próximo pago" placeholder="Se calcula con el último pago, o elegí una" value={form.proximoPago} onChange={(value) => update('proximoPago', value)} />
                       </div>
                     </div>
                   )}
