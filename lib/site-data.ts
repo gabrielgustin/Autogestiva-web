@@ -297,6 +297,14 @@ export const clients: Client[] = [
     tall: true,
   },
   {
+    name: "Carnicería Del Rivera",
+    logo: "/images/clients/del-rivera.png",
+    url: "https://carniceria-delrivera.vercel.app",
+    tile: "#ffffff",
+    keepColor: true,
+    tall: true,
+  },
+  {
     name: "Colegio UTN",
     logo: "/images/clients/colegio-utn.png",
     url: "#",
@@ -560,6 +568,17 @@ export const projects: Project[] = [
     mobile: "/images/work/pipetlabor-mobile.jpg",
     bg: "#172a56",
     accent: "#0a4bff",
+    dark: true,
+  },
+  {
+    name: "Del Rivera",
+    url: "https://carniceria-delrivera.vercel.app",
+    type: "Página web",
+    description: "Carnicería y pollería con catálogo de cortes, pedido online y retiro en el local o envío.",
+    desktop: "/images/work/del-rivera.jpg",
+    mobile: "/images/work/del-rivera-mobile.jpg",
+    bg: "#7b282a",
+    accent: "#c9a46a",
     dark: true,
   },
   {

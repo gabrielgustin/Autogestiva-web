@@ -33,7 +33,7 @@ export const services: Service[] = [
       { title: "Dominio, hosting y certificado", text: "Te la dejamos publicada y funcionando." },
       { title: "Autogestionable si lo necesitás", text: "Un panel simple para editar textos y novedades." },
     ],
-    projectNames: ["Wavi", "Posty", "SEA", "Rumbo", "Santa Remera", "FA Automotores", "Jarabus", "Estudio Jurídico CONVS", "Cambel Red Jurídica", "Zonabot", "La Comanda Tejeda", "Mara Saúl Estética", "Life Gym"],
+    projectNames: ["Wavi", "Posty", "SEA", "Rumbo", "Santa Remera", "FA Automotores", "Jarabus", "Estudio Jurídico CONVS", "Cambel Red Jurídica", "Zonabot", "La Comanda Tejeda", "Mara Saúl Estética", "Life Gym", "Del Rivera"],
     faqs: [
       { q: "¿Cuánto cuesta una página web?", a: "Depende de las secciones y funciones que necesites. Escribinos por WhatsApp y te pasamos un presupuesto claro." },
       { q: "¿En cuánto tiempo está lista?", a: "Una página institucional o una landing suele estar lista en pocas semanas. Con más funciones, lo acordamos al presupuestar." },
