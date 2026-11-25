@@ -214,6 +214,8 @@ export function ClientsDashboard() {
     const response = await fetch('/api/administracion/clients', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (response.status === 401) { router.replace('/administracion/login'); throw new Error('La sesión expiró') }
     const result = await response.json().catch(() => ({}))
+    // Si el cliente cambió en otra pestaña, se recarga la lista sola para que el próximo intento ya parta de lo nuevo.
+    if (response.status === 409 || response.status === 404) load()
     if (!response.ok) throw new Error(result.error ?? 'No se pudo guardar')
     return result
   }

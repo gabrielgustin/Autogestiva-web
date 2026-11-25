@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin/admin-session'
 import { CLIENT_COLUMNS, isDbConfigured, sql, toClient, toRow, type ClientRow } from '@/lib/admin/db'
-import { fingerprint } from '@/lib/admin/clients-shared'
+import { COLUMNS, fingerprint } from '@/lib/admin/clients-shared'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,10 @@ async function conflict(id: string, expected: unknown) {
   if (typeof expected !== 'string') return null
   const [current] = (await sql().query(`select ${CLIENT_COLUMNS} from clients where id = $1`, [id])) as ClientRow[]
   if (!current) return NextResponse.json({ error: 'El cliente ya no existe. Actualizá la lista.' }, { status: 404 })
-  if (fingerprint(toClient(current)) !== expected) return NextResponse.json({ error: 'Este cliente cambió desde que lo abriste. Actualizá la lista y volvé a intentar.' }, { status: 409 })
+  const now = fingerprint(toClient(current))
+  // Pantallas abiertas antes de sumar una columna mandan una huella más corta: vale si lo que conocían no cambió.
+  const sameKnown = expected.split('\u0001').length < COLUMNS.length && now.startsWith(`${expected}\u0001`) && now.slice(expected.length + 1).replace(/\u0001/g, '') === ''
+  if (now !== expected && !sameKnown) return NextResponse.json({ error: 'Este cliente cambió desde que lo abriste. Ya actualicé la lista: abrilo de nuevo y repetí el cambio.' }, { status: 409 })
   return null
 }
 
