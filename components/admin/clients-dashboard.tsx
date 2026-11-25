@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
+import { Bell, CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
 import { chargesPeriodically, currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
@@ -140,7 +140,6 @@ export function ClientsDashboard() {
     loadMercadoPago()
   }, [load, loadMercadoPago])
 
-  const refresh = () => { load(); loadMercadoPago() }
 
   const plans = useMemo(() => [...new Set(clients.map((client) => clean(client.plan)).filter(Boolean))].sort((a, b) => planAmount(a) - planAmount(b)), [clients])
   const servers = useMemo(() => [...new Set(clients.map((client) => clean(client.servidor)).filter(Boolean))].sort(), [clients])
@@ -351,10 +350,6 @@ export function ClientsDashboard() {
   return (
     <AdminShell>
       <PageHeader eyebrow="Cartera" title="Clientes" description="Servicios contratados, dominios y cobros de cada cliente.">
-        <button type="button" onClick={refresh} disabled={loading} className={btn.secondary}>
-          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-          {loading ? 'Actualizando' : 'Actualizar'}
-        </button>
         <button type="button" onClick={() => openNew()} className={btn.accent}>
           <Plus className="size-4" aria-hidden="true" />
           Nuevo cliente
