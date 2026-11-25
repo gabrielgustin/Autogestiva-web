@@ -638,7 +638,7 @@ function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, ca
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpen() } }}
-      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${nested ? 'bg-paper/40 md:pl-9' : ''} ${busy ? 'opacity-60' : ''} ${rowGrid}`}
+      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${nested ? 'bg-white/70 pl-6 md:pl-9' : ''} ${busy ? 'opacity-60' : ''} ${rowGrid}`}
     >
       <div className="min-w-0 pr-28 md:pr-0">
         <div className="truncate font-semibold">{name}</div>
@@ -688,8 +688,10 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   const products = [...new Set(members.map((member) => clean(member.producto)).filter(Boolean))]
   const totalPlan = members.reduce((total, member) => total + planAmount(member.plan), 0)
   const company = [...new Set(members.map((member) => clean(member.empresa)).filter(Boolean))].join(' · ')
+  // Los clientes con varios servicios se distinguen: franja azul a la izquierda y fondo celeste (más intenso abierto).
   return (
-    <div>
+    <div className={`relative transition-colors ${expanded ? 'bg-brand-light/60' : 'bg-brand-light/25'}`}>
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 z-10 bg-brand transition-all ${expanded ? 'w-1.5' : 'w-1'}`} />
       <div
         role="button"
         tabIndex={0}
@@ -701,7 +703,10 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
         <div className="min-w-0 pr-28 md:pr-0">
           <div className="truncate font-semibold" title={names.join(', ')}>{names.join(', ')}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            <Badge tone="blue">{members.length} servicios</Badge>
+            <Badge tone="blue" className="!bg-brand !text-white !ring-brand">
+              <Layers className="size-3" aria-hidden="true" />
+              {members.length} servicios
+            </Badge>
             {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
           </div>
         </div>
@@ -716,12 +721,12 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
           <button type="button" onClick={onAddService} aria-label={`Agregar servicio a ${company}`} title="Agregar servicio" className={btn.icon}>
             <Plus className="size-4" />
           </button>
-          <button type="button" onClick={onToggle} aria-label={expanded ? `Contraer ${company}` : `Ver servicios de ${company}`} className={btn.icon}>
+          <button type="button" onClick={onToggle} aria-label={expanded ? `Contraer ${company}` : `Ver servicios de ${company}`} className={`${btn.icon} ${expanded ? '!border-ink !bg-ink !text-white' : ''}`}>
             <ChevronDown className={`size-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>
-      {expanded && <div className="divide-y divide-line border-t border-line">{children}</div>}
+      {expanded && <div className="divide-y divide-brand/10 border-t border-brand/15">{children}</div>}
     </div>
   )
 }
