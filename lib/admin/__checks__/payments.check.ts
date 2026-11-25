@@ -11,7 +11,7 @@ assert.equal(nextPaymentDate('Pago semestral', '2026-08-31'), '2027-02-28')
 assert.equal(nextPaymentDate('Pago anual', '2024-02-29'), '2025-02-28')
 assert.equal(nextPaymentDate('Pago mensual', ''), '')
 
-const client = (empresa: string, proximoPago: string) => ({ row: empresa, nombre: 'A', apellido: 'B', empresa, producto: 'Web', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '$10.000', metodoPago: 'Débito Automático', ultimoPago: '', proximoPago })
+const client = (empresa: string, proximoPago: string) => ({ row: empresa, nombre: 'A', apellido: 'B', empresa, producto: 'Web', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '$10.000', metodoPago: 'Débito Automático', ultimoPago: '', proximoPago, avisoSuscripcion: '' })
 const today = new Date(2026, 10, 24)
 const alerts = buildClientAlerts([client('Life Gym', '2026-11-10'), client('CTP', '2026-11-10'), client('Lejos', '2027-03-01')], today, { 'Life Gym': '2026-11-12' })
 assert.deepEqual(alerts.map((a) => a.cliente), ['CTP'])
@@ -36,4 +36,11 @@ assert.equal(nextPaymentDate('Ninguno', '2026-11-12'), '')
 assert.equal(nextPaymentDate('', '2026-11-12'), '')
 const web = { ...client('Jara Bus', '2026-11-10'), metodoPago: 'Pago mensual' }
 assert.equal(buildClientAlerts([web], new Date(2026, 10, 20), { 'Jara Bus': '2026-11-12' })[0]?.date, '2026-11-10')
+// Aviso de suscripción: desde su fecha, solo si todavía falta suscribir
+const conAviso = { ...client('Salatin', '2027-01-10'), avisoSuscripcion: '2026-12-01' }
+const tipos = (hoy: Date, falta: boolean) => buildClientAlerts([conAviso], hoy, {}, () => falta).map((a) => a.type)
+assert.deepEqual(tipos(new Date(2026, 10, 30), true), [])
+assert.deepEqual(tipos(new Date(2026, 11, 1), true), ['suscripcion'])
+assert.deepEqual(tipos(new Date(2026, 11, 5), true), ['suscripcion'])
+assert.deepEqual(tipos(new Date(2026, 11, 5), false), [])
 console.log('payments.check (sin método) ok')

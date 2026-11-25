@@ -6,7 +6,7 @@ export const PAYMENT_WARNING_DAYS = 10
 
 export type ClientAlert = {
   id: string
-  type: 'dominio' | 'pago'
+  type: 'dominio' | 'pago' | 'suscripcion'
   cliente: string
   detalle: string
   date: string
@@ -30,7 +30,8 @@ function daysUntil(isoDate: string, today: Date) {
 
 // Domains expiring within DOMAIN_WARNING_DAYS and payments due within PAYMENT_WARNING_DAYS (overdue included), soonest first.
 // `paidThrough`: último cobro confirmado por Mercado Pago por empresa (YYYY-MM-DD); el aviso usa el vencimiento vigente (ver currentDueDate).
-export function buildClientAlerts(clients: SheetClient[], today = new Date(), paidThrough: Record<string, string> = {}): ClientAlert[] {
+// `needsSubscription`: el cliente todavía no está suscripto en Mercado Pago; solo entonces vale su aviso para enviar el link.
+export function buildClientAlerts(clients: SheetClient[], today = new Date(), paidThrough: Record<string, string> = {}, needsSubscription: (client: SheetClient) => boolean = () => false): ClientAlert[] {
   const alerts: ClientAlert[] = []
   const seenDomains = new Set<string>()
   for (const client of clients) {
@@ -40,6 +41,11 @@ export function buildClientAlerts(clients: SheetClient[], today = new Date(), pa
     if (domainDays !== null && domainDays <= DOMAIN_WARNING_DAYS && !seenDomains.has(domainKey)) {
       seenDomains.add(domainKey)
       alerts.push({ id: `dominio-${client.row}`, type: 'dominio', cliente, detalle: client.dominio, date: client.dominioVencimiento, days: domainDays })
+    }
+    // Aviso elegido a mano: desde ese día queda en "Para atender" hasta que se marque como enviado.
+    const reminderDays = client.avisoSuscripcion && needsSubscription(client) ? daysUntil(client.avisoSuscripcion, today) : null
+    if (reminderDays !== null && reminderDays <= 0) {
+      alerts.push({ id: `suscripcion-${client.row}`, type: 'suscripcion', cliente, detalle: client.producto || 'Servicio', date: client.avisoSuscripcion, days: reminderDays })
     }
     const due = currentDueDate(client.metodoPago, client.proximoPago, isAutoDebit(client.metodoPago) ? paidThrough[cliente] : '')
     const paymentDays = daysUntil(due, today)

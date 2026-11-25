@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
+import { Bell, CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
 import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
 import { chargesPeriodically, currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 
-const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '' }
+const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '', avisoSuscripcion: '' }
 const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual', 'Ninguno']
 const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
 const CUSTOM_PLAN = '__personalizado'
@@ -150,7 +150,9 @@ export function ClientsDashboard() {
     const today = todayIso()
     return clients.filter((client) => client.dominioVencimiento && client.dominioVencimiento >= today).sort((a, b) => a.dominioVencimiento.localeCompare(b.dominioVencimiento))[0] ?? null
   }, [clients])
-  const alerts = useMemo(() => buildClientAlerts(clients, new Date(), mpPaid), [clients, mpPaid])
+  // Cliente con plan que todavía no tiene suscripción en Mercado Pago (solo si la consulta respondió).
+  const needsSubscription = (client: SheetClient) => !!mpSubs && !!clean(client.plan) && isAutoDebit(client.metodoPago) && !mpSubs.has(client.empresa)
+  const alerts = useMemo(() => buildClientAlerts(clients, new Date(), mpPaid, needsSubscription), [clients, mpPaid, mpSubs]) // eslint-disable-line react-hooks/exhaustive-deps
   // Empresas con más de un aviso (p. ej. La Comanda con dos servicios): ahí el título suma el producto para distinguirlos.
   const repeatedCompanies = useMemo(() => new Set(alerts.map((a) => a.cliente).filter((c, i, all) => all.indexOf(c) !== i)), [alerts])
   const clientByRow = useMemo(() => new Map(clients.map((client) => [client.row, client])), [clients])
@@ -164,8 +166,6 @@ export function ClientsDashboard() {
   const visibleEntries = useMemo(() => buildEntries(filtered), [filtered])
   const totalEntries = useMemo(() => buildEntries(clients).length, [clients])
   const isFiltering = query.trim() !== '' || plan !== 'all' || servidor !== 'all'
-  // Cliente con plan que todavía no tiene suscripción en Mercado Pago (solo si la consulta respondió).
-  const needsSubscription = (client: SheetClient) => !!mpSubs && !!clean(client.plan) && isAutoDebit(client.metodoPago) && !mpSubs.has(client.empresa)
   const mpPaidFor = (client: SheetClient) => (isAutoDebit(client.metodoPago) ? mpPaid[client.empresa] ?? '' : '')
   const mpConfirmed = Object.keys(mpPaid).length
   const unsubscribed = mpSubs ? new Set(clients.filter(needsSubscription).map((client) => clean(client.empresa) || client.row)).size : 0
@@ -235,6 +235,21 @@ export function ClientsDashboard() {
       setFormError(e instanceof Error ? e.message : 'No se pudo guardar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Aviso para mandarle el link de suscripción en una fecha puntual ('' lo quita).
+  async function setReminder(client: SheetClient, date: string) {
+    setBusyRow(client.row)
+    try {
+      const saved = await send('PUT', { ...toInput(client), avisoSuscripcion: date, row: client.row, expected: fingerprint(toInput(client)) })
+      notify(date ? `Aviso guardado para el ${formatDate(date)}` : 'Aviso quitado')
+      setSelectedClient((current) => (current?.row === client.row ? { ...current, avisoSuscripcion: saved.avisoSuscripcion ?? '' } : current))
+      await load()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo guardar el aviso', 'error')
+    } finally {
+      setBusyRow(null)
     }
   }
 
@@ -391,6 +406,7 @@ export function ClientsDashboard() {
                   unsubscribed={alert.type === 'pago' && !!mpSubs && !mpSubs.has(alert.cliente)}
                   busy={busyRow === alertRow(alert)}
                   onPaid={markPaid}
+                  onReminderDone={(client) => setReminder(client, '')}
                   onOpen={setSelectedClient}
                 />
               ))}
@@ -474,6 +490,7 @@ export function ClientsDashboard() {
           onEdit={() => openEdit(selectedClient)}
           onAddService={() => openNew(selectedClient)}
           onPaid={() => markPaid(selectedClient)}
+          onReminder={(date) => setReminder(selectedClient, date)}
           onDelete={() => remove(selectedClient)}
         />
       )}
@@ -576,19 +593,36 @@ function SelectFilter({ value, onChange, allLabel, options }: { value: string; o
   return <SelectField ariaLabel={allLabel} value={value} onChange={onChange} options={[{ value: 'all', label: allLabel }, ...options]} className="min-w-0 md:w-52" />
 }
 
-function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onOpen }: { alert: ClientAlert; client?: SheetClient; showService: boolean; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {
+function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onReminderDone, onOpen }: { alert: ClientAlert; client?: SheetClient; showService: boolean; unsubscribed: boolean; busy: boolean; onPaid: (client: SheetClient) => void; onReminderDone: (client: SheetClient) => void; onOpen: (client: SheetClient) => void }) {
   return (
     <li className="flex items-center justify-between gap-3 bg-white px-4 py-3 md:px-5">
       <button type="button" onClick={() => client && onOpen(client)} className="min-w-0 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="font-semibold">{alert.cliente}{showService && client && clean(client.producto) && <span className="font-normal text-muted-ink"> · {client.producto}</span>}</span>
-          <Badge tone={alert.days < 0 ? 'red' : 'orange'}>{describeDays(alert.days)}</Badge>
-          {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
+          {alert.type === 'suscripcion' ? (
+            <Badge tone="blue"><Bell className="size-3" aria-hidden="true" />{alert.days === 0 ? 'Enviar hoy' : `Desde hace ${-alert.days} ${alert.days === -1 ? 'día' : 'días'}`}</Badge>
+          ) : (
+            <Badge tone={alert.days < 0 ? 'red' : 'orange'}>{describeDays(alert.days)}</Badge>
+          )}
+          {unsubscribed && alert.type !== 'suscripcion' && <Badge tone="amber">Falta suscribir</Badge>}
         </span>
         <span className="mt-0.5 block text-xs text-muted-ink">
-          {alert.type === 'dominio' ? 'Dominio' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}
+          {alert.type === 'dominio' ? 'Dominio' : alert.type === 'suscripcion' ? 'Enviar el link de suscripción' : 'Pago'} · {alert.detalle} · {formatDate(alert.date)}
         </span>
       </button>
+      {alert.type === 'suscripcion' && client && (
+        <div className="flex shrink-0 items-center gap-1.5">
+          {clean(client.telefono) && (
+            <a href={whatsappUrl(client.telefono)} target="_blank" rel="noreferrer" className={btn.icon} aria-label={`WhatsApp a ${alert.cliente}`} title="WhatsApp">
+              <MessageCircle className="size-4" aria-hidden="true" />
+            </a>
+          )}
+          <button type="button" disabled={busy} onClick={() => onReminderDone(client)} className={`${btn.secondary} h-9 px-3 text-xs`} aria-label={`Marcar enviado el link a ${alert.cliente}`}>
+            <Check className="size-3.5" aria-hidden="true" />
+            {busy ? 'Guardando' : 'Enviado'}
+          </button>
+        </div>
+      )}
       {alert.type === 'pago' && client && (
         <button type="button" disabled={busy} onClick={() => onPaid(client)} className={`${btn.secondary} h-9 shrink-0 px-3 text-xs`} aria-label={`Registrar pago de ${alert.cliente}`}>
           <Check className="size-3.5" aria-hidden="true" />
@@ -642,6 +676,7 @@ function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, ca
             <a href={whatsappUrl(client.telefono)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="text-xs text-muted-ink underline-offset-2 hover:text-brand hover:underline">{client.telefono}</a>
           ) : <span className="text-xs text-ink/40">Sin teléfono</span>}
           {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
+          {unsubscribed && client.avisoSuscripcion && <Badge tone="blue"><Bell className="size-3" aria-hidden="true" />Aviso {formatDate(client.avisoSuscripcion)}</Badge>}
           {paidByMp && <Badge tone="green">MP al día</Badge>}
         </div>
       </div>
@@ -726,7 +761,7 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   )
 }
 
-function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onDelete: () => void }) {
+function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onReminder, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onReminder: (date: string) => void; onDelete: () => void }) {
   const groups: { title: string; items: [string, string][] }[] = [
     { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
     { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
@@ -752,6 +787,20 @@ function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, 
         {unsubscribed && <Badge tone="amber" className="self-center">Falta suscribir en Mercado Pago</Badge>}
         {paidByMp && <Badge tone="green" className="self-center">Mercado Pago cobró el {formatDate(paidByMp)}</Badge>}
       </div>
+      {unsubscribed && (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-amber-900"><Bell className="size-4" aria-hidden="true" />Recordarme enviar el link de suscripción</p>
+          <p className="mt-1 text-xs text-amber-900/70">Elegí el día y ese día aparece en “Para atender” con un acceso a WhatsApp.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="w-full sm:w-56">
+              <DateField ariaLabel="Fecha del aviso de suscripción" placeholder="Elegí el día del aviso" value={client.avisoSuscripcion} onChange={onReminder} />
+            </div>
+            {client.avisoSuscripcion && (
+              <button type="button" disabled={busy} onClick={() => onReminder('')} className={`${btn.secondary} h-10 px-3 text-xs`}>Quitar aviso</button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="space-y-5">
         {groups.map((group) => (
           <div key={group.title}>

@@ -12,7 +12,7 @@ export function sql() {
   return client
 }
 
-export const CLIENT_COLUMNS = 'id,nombre,apellido,empresa,producto,dominio,dominio_vencimiento::text,mail,telefono,servidor,base_datos,plan,metodo_pago,ultimo_pago::text,proximo_pago::text,orden'
+export const CLIENT_COLUMNS = 'id,nombre,apellido,empresa,producto,dominio,dominio_vencimiento::text,mail,telefono,servidor,base_datos,plan,metodo_pago,ultimo_pago::text,proximo_pago::text,aviso_suscripcion::text,orden'
 
 export type ClientRow = {
   id: string
@@ -30,11 +30,12 @@ export type ClientRow = {
   metodo_pago: string | null
   ultimo_pago: string | null
   proximo_pago: string | null
+  aviso_suscripcion: string | null
   orden: number | null
 }
 
 export function toClient(row: ClientRow) {
-  return { row: row.id, nombre: row.nombre, apellido: row.apellido, empresa: row.empresa ?? '', producto: row.producto ?? '', dominio: row.dominio ?? '', dominioVencimiento: row.dominio_vencimiento ?? '', mail: row.mail ?? '', telefono: row.telefono ?? '', servidor: row.servidor ?? '', baseDatos: row.base_datos ?? '', plan: row.plan ?? '', metodoPago: row.metodo_pago ?? '', ultimoPago: row.ultimo_pago ?? '', proximoPago: row.proximo_pago ?? '', orden: row.orden ?? 0 }
+  return { row: row.id, nombre: row.nombre, apellido: row.apellido, empresa: row.empresa ?? '', producto: row.producto ?? '', dominio: row.dominio ?? '', dominioVencimiento: row.dominio_vencimiento ?? '', mail: row.mail ?? '', telefono: row.telefono ?? '', servidor: row.servidor ?? '', baseDatos: row.base_datos ?? '', plan: row.plan ?? '', metodoPago: row.metodo_pago ?? '', ultimoPago: row.ultimo_pago ?? '', proximoPago: row.proximo_pago ?? '', avisoSuscripcion: row.aviso_suscripcion ?? '', orden: row.orden ?? 0 }
 }
 
 const FIELD_MAX = 200
@@ -49,7 +50,7 @@ export function toRow(input: Record<string, unknown>): { row: Record<string, str
   const nombre = text(input.nombre)
   const apellido = text(input.apellido)
   if (!nombre || !apellido) return { error: 'Nombre y apellido son obligatorios' }
-  const dates = { dominio_vencimiento: text(input.dominioVencimiento), ultimo_pago: text(input.ultimoPago), proximo_pago: text(input.proximoPago) }
+  const dates = { dominio_vencimiento: text(input.dominioVencimiento), ultimo_pago: text(input.ultimoPago), proximo_pago: text(input.proximoPago), aviso_suscripcion: text(input.avisoSuscripcion) }
   if (Object.values(dates).some((value) => value && !DATE_RE.test(value))) return { error: 'Las fechas deben tener formato AAAA-MM-DD' }
   return {
     row: {
@@ -57,7 +58,7 @@ export function toRow(input: Record<string, unknown>): { row: Record<string, str
       empresa: text(input.empresa) || null, producto: text(input.producto) || null, dominio: text(input.dominio) || null,
       dominio_vencimiento: dates.dominio_vencimiento || null, mail: text(input.mail) || null, telefono: text(input.telefono) || null,
       servidor: text(input.servidor) || null, base_datos: text(input.baseDatos) || null, plan: text(input.plan) || null,
-      metodo_pago: text(input.metodoPago) || null, ultimo_pago: dates.ultimo_pago || null, proximo_pago: dates.proximo_pago || null,
+      metodo_pago: text(input.metodoPago) || null, ultimo_pago: dates.ultimo_pago || null, proximo_pago: dates.proximo_pago || null, aviso_suscripcion: dates.aviso_suscripcion || null,
     },
   }
 }
