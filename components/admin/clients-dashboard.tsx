@@ -431,7 +431,7 @@ export function ClientsDashboard() {
 
         <div className={`hidden border-b border-line bg-paper/60 px-5 py-2.5 ${rowGrid}`}>
           {['Cliente', 'Empresa y producto', 'Dominio', 'Servidor', 'Plan'].map((label) => (
-            <div key={label} className="eyebrow text-[10px] text-muted-ink">{label}</div>
+            <div key={label} className="eyebrow whitespace-nowrap text-[10px] text-muted-ink">{label}</div>
           ))}
           <div />
         </div>
@@ -628,7 +628,7 @@ function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onR
   )
 }
 
-const rowGrid = 'md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_7.5rem] md:items-center md:gap-4'
+const rowGrid = 'md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.45fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_7.5rem] md:items-center md:gap-4'
 
 function OrderButtons({ label, canMoveUp, canMoveDown, onMoveUp, onMoveDown }: { label: string; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void }) {
   return (
