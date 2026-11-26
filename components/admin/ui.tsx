@@ -103,6 +103,7 @@ const badgeTones = {
   amber: 'bg-amber-50 text-amber-800 ring-amber-200',
   green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   blue: 'bg-brand-light text-brand ring-brand/20',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
   gray: 'bg-paper text-muted-ink ring-line',
 }
 

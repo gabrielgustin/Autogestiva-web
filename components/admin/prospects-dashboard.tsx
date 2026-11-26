@@ -14,7 +14,7 @@ type Evento = { tipo: string; texto?: string }
 
 const PAGE = 50
 const CERRADOS: Estado[] = ['Cliente', 'Rechazado', 'En pausa']
-const SIN_CONTACTO: Estado[] = ['Prospecto', 'Demo lista']
+const SIN_CONTACTO: Estado[] = ['Prospecto', 'Hacer demo', 'Demo lista']
 const MEDIOS = [
   { tipo: 'WhatsApp', icon: MessageCircle },
   { tipo: 'Llamada', icon: Phone },
@@ -57,8 +57,8 @@ export function ProspectsDashboard() {
   const [limit, setLimit] = useState(PAGE)
   const [openId, setOpenId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropOn, setDropOn] = useState<Estado | null>(null)
+  const [dragging, setDragging] = useState<{ id: string; width: number } | null>(null)
+  const [overCol, setOverCol] = useState<Estado | null>(null)
   const [menu, setMenu] = useState<{ id: string; anchor: DOMRect } | null>(null)
   const menuId = menu?.id ?? null
   const board = useRef<HTMLDivElement>(null)
@@ -117,6 +117,112 @@ export function ProspectsDashboard() {
     }
   }
 
+  // Arrastre propio (puntero: mouse, lápiz o dedo) en lugar del drag & drop nativo, que no desplaza bien el tablero:
+  // una copia de la tarjeta sigue al puntero y, cerca de los bordes, el tablero y la columna se desplazan solos.
+  const drag = useRef<{ id: string; x0: number; y0: number; x: number; y: number; dx: number; dy: number; width: number; active: boolean; touch: boolean; timer?: number } | null>(null)
+  const dragMoved = useRef(false)
+  const ghost = useRef<HTMLDivElement>(null)
+  const moveRef = useRef(move)
+  moveRef.current = move
+
+  function startDrag(e: React.PointerEvent<HTMLDivElement>, id: string) {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-no-drag]')) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const d = { id, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, dx: e.clientX - rect.left, dy: e.clientY - rect.top, width: rect.width, active: false, touch: e.pointerType === 'touch' }
+    drag.current = d
+    dragMoved.current = false
+    // Con el dedo hay que mantener apretado un instante: así deslizar sigue sirviendo para desplazarse.
+    if (d.touch) (d as { timer?: number }).timer = window.setTimeout(() => activate(), 280)
+  }
+
+  const activate = useCallback(() => {
+    const d = drag.current
+    if (!d || d.active) return
+    d.active = true
+    dragMoved.current = true
+    setMenu(null)
+    setDragging({ id: d.id, width: d.width })
+    navigator.vibrate?.(12)
+  }, [])
+
+  useEffect(() => {
+    let raf = 0
+    const colAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest('[data-col]') as HTMLElement | null)?.dataset.col as Estado | undefined
+    const place = () => {
+      const d = drag.current
+      if (d && ghost.current) ghost.current.style.transform = `translate3d(${d.x - d.dx}px, ${d.y - d.dy}px, 0) rotate(2deg)`
+    }
+    // Velocidad que crece cuanto más cerca del borde está el puntero.
+    const speed = (depth: number, zone: number) => Math.round(Math.min(1, depth / zone) ** 2 * 26) + 2
+    const tick = () => {
+      const d = drag.current
+      if (!d?.active) return
+      const el = board.current
+      if (el) {
+        const r = el.getBoundingClientRect()
+        const zone = Math.min(140, r.width / 4)
+        if (d.x < r.left + zone) el.scrollLeft -= speed(r.left + zone - d.x, zone)
+        else if (d.x > r.right - zone) el.scrollLeft += speed(d.x - (r.right - zone), zone)
+      }
+      const list = document.elementFromPoint(d.x, d.y)?.closest('[data-col]')?.querySelector<HTMLElement>('[data-list]')
+      if (list) {
+        const r = list.getBoundingClientRect()
+        const zone = Math.min(90, r.height / 4)
+        if (d.y < r.top + zone) list.scrollTop -= speed(r.top + zone - d.y, zone)
+        else if (d.y > r.bottom - zone) list.scrollTop += speed(d.y - (r.bottom - zone), zone)
+      }
+      setOverCol(colAt(d.x, d.y) ?? null)
+      place()
+      raf = requestAnimationFrame(tick)
+    }
+    const onMove = (e: PointerEvent) => {
+      const d = drag.current
+      if (!d) return
+      // Si se soltó el botón fuera de la ventana, al volver se termina el arrastre.
+      if (d.active && !d.touch && e.buttons === 0) return onEnd(e)
+      d.x = e.clientX
+      d.y = e.clientY
+      if (!d.active) {
+        if (Math.hypot(d.x - d.x0, d.y - d.y0) < 6) return
+        // Con el dedo, moverse antes de tiempo es desplazarse, no arrastrar.
+        if (d.touch) { window.clearTimeout(d.timer); drag.current = null; return }
+        activate()
+      }
+      if (!raf) raf = requestAnimationFrame(tick)
+      place()
+    }
+    const onEnd = (e: PointerEvent) => {
+      const d = drag.current
+      drag.current = null
+      cancelAnimationFrame(raf)
+      raf = 0
+      if (!d) return
+      window.clearTimeout(d.timer)
+      if (!d.active) return
+      const col = e.type === 'pointerup' ? colAt(d.x, d.y) : undefined
+      setDragging(null)
+      setOverCol(null)
+      if (col) moveRef.current(d.id, col)
+      // El click que sigue al soltar no debe abrir la ficha.
+      window.setTimeout(() => { dragMoved.current = false }, 0)
+    }
+    const onTouchMove = (e: TouchEvent) => { if (drag.current?.active) e.preventDefault() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && drag.current?.active) onEnd(new PointerEvent('pointercancel')) }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+    window.addEventListener('pointercancel', onEnd)
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('keydown', onKey)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+      window.removeEventListener('pointercancel', onEnd)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [activate])
+
   const agenda = useMemo(
     () => prospects.filter((p) => p.proximoFecha && p.proximoFecha <= today && !CERRADOS.includes(p.estado)).sort((a, b) => a.proximoFecha.localeCompare(b.proximoFecha)),
     [prospects, today],
@@ -151,7 +257,7 @@ export function ProspectsDashboard() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Para hoy" value={loading ? '…' : agenda.length} detail={agenda.length ? 'Seguimientos que tocan o se atrasaron' : 'Nada pendiente'} icon={<CalendarClock />} />
-        <Stat label="Demos para enviar" value={loading ? '…' : counts.by['Demo lista']} detail="Listas, todavía sin mandar" icon={<Send />} />
+        <Stat label="Demos para enviar" value={loading ? '…' : counts.by['Demo lista']} detail={`Listas para mandar · ${counts.by['Hacer demo']} por hacer`} icon={<Send />} />
         <Stat label="En conversación" value={loading ? '…' : counts.enCurso} detail={`${counts.by.Interesado} interesados`} icon={<Flame />} />
         <Stat label="Clientes ganados" value={loading ? '…' : counts.by.Cliente} detail={`${counts.tasa}% de los contactados`} icon={<Trophy />} />
       </div>
@@ -195,67 +301,48 @@ export function ProspectsDashboard() {
             </button>
           ))}
         </div>
-        {tab === 'embudo' && <p className="hidden text-xs text-muted-ink md:block">Arrastrá una tarjeta a otra columna para cambiarle el estado.</p>}
+        {tab === 'embudo' && <p className="hidden text-xs text-muted-ink md:block">Arrastrá una tarjeta a otra columna; cerca de los bordes el tablero se desplaza solo.</p>}
       </div>
 
       {loading ? (
         <div className={`${card} mt-4`}><EmptyState>Cargando prospectos…</EmptyState></div>
       ) : tab === 'embudo' ? (
-        <div
-          ref={board}
-          onDragOver={(e) => {
-            // Arrastrando cerca de un borde, el tablero se desplaza solo hacia ese lado.
-            const el = board.current
-            if (!el) return
-            const { left, right } = el.getBoundingClientRect()
-            if (e.clientX < left + 90) el.scrollLeft -= 24
-            else if (e.clientX > right - 90) el.scrollLeft += 24
-          }}
-          className={`-mx-4 mt-4 flex gap-3 overflow-x-auto px-4 pb-4 md:-mx-8 md:px-8 ${dragId ? '' : 'snap-x'}`}
-        >
+        // Alto fijo con scroll dentro de cada columna: los títulos quedan siempre a la vista.
+        <div ref={board} className={`-mx-4 mt-4 flex h-[calc(100dvh-8rem)] min-h-[440px] gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 md:-mx-8 md:h-[calc(100dvh-6rem)] md:px-8 ${dragging ? 'cursor-grabbing select-none' : 'snap-x'}`}>
           {ESTADOS.filter((e) => e !== 'Prospecto').map((col) => {
             const items = prospects.filter((p) => p.estado === col).sort((a, b) => (a.proximoFecha || '9999').localeCompare(b.proximoFecha || '9999'))
+            const isOver = overCol === col && dragging && prospects.find((p) => p.id === dragging.id)?.estado !== col
             return (
               <section
                 key={col}
                 aria-label={col}
-                onDragOver={(e) => { e.preventDefault(); setDropOn(col) }}
-                onDragLeave={() => setDropOn((c) => (c === col ? null : c))}
-                onDrop={(e) => { e.preventDefault(); setDropOn(null); if (dragId) move(dragId, col) }}
-                className={`flex w-[272px] shrink-0 snap-start flex-col rounded-2xl border p-2 transition-colors ${dropOn === col ? 'border-brand bg-brand-light/60' : 'border-line bg-white/50'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-75' : ''}`}
+                data-col={col}
+                className={`flex h-full w-[280px] shrink-0 snap-start flex-col rounded-2xl border transition-colors duration-150 ${isOver ? 'border-brand bg-brand-light/70 ring-4 ring-brand/15' : 'border-line bg-white/60'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-80' : ''}`}
               >
-                <header className="flex items-center justify-between px-2 pb-2 pt-1">
+                <header className="flex shrink-0 items-center justify-between border-b border-line/70 px-3 py-2.5">
                   <Badge tone={ESTADO_TONE[col]}>{col}</Badge>
-                  <span className="text-xs font-semibold text-muted-ink">{items.length}</span>
+                  <span className="rounded-full bg-paper px-2 py-0.5 text-xs font-semibold text-muted-ink">{items.length}</span>
                 </header>
-                <div className="flex min-h-24 flex-col gap-2">
+                <div data-list className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
                   {items.map((p) => {
                     const when = p.proximoFecha ? cuando(p.proximoFecha, today) : null
                     return (
                       <div
                         key={p.id}
-                        draggable
-                        onDragStart={() => { setDragId(p.id); setMenu(null) }}
-                        onDragEnd={() => { setDragId(null); setDropOn(null) }}
-                        className={`relative rounded-xl border border-line bg-white shadow-[0_1px_0_rgba(11,19,34,0.04)] transition hover:border-ink/25 hover:shadow-[0_12px_30px_-18px_rgba(11,19,34,0.35)] ${dragId === p.id ? 'opacity-40' : ''}`}
+                        onPointerDown={(e) => startDrag(e, p.id)}
+                        className={`relative shrink-0 select-none rounded-xl border border-line bg-white shadow-[0_1px_0_rgba(11,19,34,0.04)] transition hover:border-ink/25 hover:shadow-[0_12px_30px_-18px_rgba(11,19,34,0.35)] ${dragging ? '' : 'cursor-grab'} ${dragging?.id === p.id ? 'border-dashed border-ink/25 opacity-35 shadow-none' : ''}`}
                       >
-                        <button type="button" onClick={() => setOpenId(p.id)} className="block w-full p-3 pr-9 text-left">
-                        <span className="line-clamp-2 font-semibold leading-snug">{p.negocio}</span>
-                        <span className="mt-0.5 block truncate text-xs text-muted-ink">{p.rubro || p.producto}</span>
-                        <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                          {when && <Badge tone={when.tone}><CalendarClock className="size-3" />{when.text}</Badge>}
-                          {p.fechaContacto && <span className="text-[11px] text-muted-ink">Contacto hace {Math.max(0, daysBetween(p.fechaContacto, today))} d</span>}
-                          {!p.fechaContacto && p.demo && <span className="text-[11px] text-muted-ink">Demo lista</span>}
-                        </span>
+                        <button type="button" onClick={() => { if (!dragMoved.current) setOpenId(p.id) }} className="block w-full cursor-[inherit] p-3 pr-9 text-left">
+                          <CardBody p={p} when={when} today={today} />
                         </button>
-                        <button type="button" aria-label={`Opciones de ${p.negocio}`} aria-haspopup="menu" aria-expanded={menuId === p.id} onClick={(e) => setMenu(menuId === p.id ? null : { id: p.id, anchor: e.currentTarget.getBoundingClientRect() })} className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-paper hover:text-ink">
+                        <button type="button" data-no-drag aria-label={`Opciones de ${p.negocio}`} aria-haspopup="menu" aria-expanded={menuId === p.id} onClick={(e) => setMenu(menuId === p.id ? null : { id: p.id, anchor: e.currentTarget.getBoundingClientRect() })} className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-paper hover:text-ink">
                           <MoreHorizontal className="size-4" />
                         </button>
                         {menu?.id === p.id && <CardMenu p={p} anchor={menu.anchor} today={today} onClose={() => setMenu(null)} onOpen={() => { setMenu(null); setOpenId(p.id) }} onAction={(patch, evento, ok) => quick(p.id, patch, evento, ok)} notify={notify} />}
                       </div>
                     )
                   })}
-                  {items.length === 0 && <p className="px-2 py-6 text-center text-xs text-ink/35">Soltá una tarjeta acá</p>}
+                  {items.length === 0 && <p className="px-2 py-8 text-center text-xs text-ink/35">Soltá una tarjeta acá</p>}
                 </div>
               </section>
             )
@@ -289,8 +376,8 @@ export function ProspectsDashboard() {
           ) : (
             <ul className="divide-y divide-line">
               {banco.slice(0, limit).map((p) => (
-                <li key={p.id}>
-                  <button type="button" onClick={() => setOpenId(p.id)} className="grid w-full grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors hover:bg-paper md:grid-cols-[minmax(0,1fr)_140px_150px_72px_16px]">
+                <li key={p.id} className="flex items-center">
+                  <button type="button" onClick={() => setOpenId(p.id)} className="grid min-w-0 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors hover:bg-paper md:grid-cols-[minmax(0,1fr)_140px_150px_72px_16px]">
                     <span className="min-w-0">
                       <span className="block truncate font-semibold">{p.negocio}</span>
                       <span className="block truncate text-xs text-muted-ink">{[p.rubro, p.ciudad].filter(Boolean).join(' · ') || '—'}{p.motivo && <span className="text-orange-600"> · {p.motivo.split(';')[0]}</span>}</span>
@@ -303,6 +390,14 @@ export function ProspectsDashboard() {
                     </span>
                     <ChevronRight className="hidden size-4 text-ink/30 md:block" />
                   </button>
+                  {/* Elegido para trabajar: pasa a la columna «Hacer demo» del embudo. */}
+                  {p.estado === 'Prospecto' ? (
+                    <button type="button" title="Pasar a «Hacer demo»" onClick={() => quick(p.id, { estado: 'Hacer demo' }, undefined, `${p.negocio} pasó a «Hacer demo»`)} className="mr-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-100 md:mr-4">
+                      <Plus className="size-4" /> <span className="hidden sm:inline">Hacer demo</span>
+                    </button>
+                  ) : (
+                    <span className="mr-3 w-9 shrink-0 md:mr-4 sm:w-[118px]" />
+                  )}
                 </li>
               ))}
             </ul>
@@ -318,6 +413,12 @@ export function ProspectsDashboard() {
       {open && <ProspectSheet key={open.id} prospect={open} api={api} save={save} notify={notify} today={today} onClose={() => setOpenId(null)} onDeleted={(id) => { setProspects((list) => list.filter((p) => p.id !== id)); setOpenId(null) }} />}
       {creating && <NewProspect api={api} onClose={() => setCreating(false)} onCreated={(p) => { setProspects((list) => [p, ...list]); setCreating(false); setOpenId(p.id); notify('Prospecto cargado') }} />}
 
+      {dragging && createPortal(
+        <div ref={ghost} aria-hidden="true" style={{ width: dragging.width }} className="pointer-events-none fixed left-0 top-0 z-[100] rounded-xl border border-ink/15 bg-white p-3 pr-9 shadow-[0_28px_60px_-20px_rgba(11,19,34,0.55)] will-change-transform">
+          {(() => { const p = prospects.find((x) => x.id === dragging.id); return p ? <CardBody p={p} when={p.proximoFecha ? cuando(p.proximoFecha, today) : null} today={today} /> : null })()}
+        </div>,
+        document.body,
+      )}
       {toast && (
         <div role="status" className={`fixed inset-x-4 bottom-4 z-[95] mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-[0_20px_50px_-20px_rgba(11,19,34,0.5)] sm:inset-x-auto sm:right-6 ${toast.tone === 'ok' ? 'bg-ink' : 'bg-red-600'}`}>
           {toast.message}
@@ -399,7 +500,7 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   const changed = [...DATA_FIELDS.map((f) => f.key), 'producto', 'motivo', 'notas'].filter((k) => (form[k as keyof Patch] ?? '') !== (p[k as keyof Patch] ?? '')) as (keyof Patch)[]
   async function guardarDatos() {
     const patch = Object.fromEntries(changed.map((k) => [k, form[k]])) as Patch
-    if (patch.demo && p.estado === 'Prospecto') patch.estado = 'Demo lista'
+    if (patch.demo && (p.estado === 'Prospecto' || p.estado === 'Hacer demo')) patch.estado = 'Demo lista'
     if (await run(patch, undefined, patch.estado === 'Demo lista' ? 'Datos guardados · pasó a «Demo lista»' : 'Datos guardados')) {
       if (patch.whatsapp !== undefined) setForm((f) => ({ ...f, whatsapp: phoneDigits(patch.whatsapp ?? '') }))
     }
@@ -567,6 +668,21 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
       {confirmDialog}
       {viewing && <SiteViewer title={`${viewing.label} · ${p.negocio}`} url={viewing.url} onClose={() => setViewing(null)} />}
     </Modal>
+  )
+}
+
+// Contenido de una tarjeta del embudo (se usa también en la copia que sigue al puntero al arrastrar).
+function CardBody({ p, when, today }: { p: Prospect; when: ReturnType<typeof cuando> | null; today: string }) {
+  return (
+    <>
+      <span className="line-clamp-2 font-semibold leading-snug">{p.negocio}</span>
+      <span className="mt-0.5 block truncate text-xs text-muted-ink">{p.rubro || p.producto}</span>
+      <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {when && <Badge tone={when.tone}><CalendarClock className="size-3" />{when.text}</Badge>}
+        {p.fechaContacto && <span className="text-[11px] text-muted-ink">Contacto hace {Math.max(0, daysBetween(p.fechaContacto, today))} d</span>}
+        {!p.fechaContacto && p.demo && <span className="text-[11px] text-muted-ink">Demo lista</span>}
+      </span>
+    </>
   )
 }
 
