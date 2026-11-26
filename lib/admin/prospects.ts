@@ -4,6 +4,9 @@
 export const ESTADOS = ['Prospecto', 'Hacer demo', 'Demo lista', 'Contactado', 'Interesado', 'Cliente', 'Rechazado', 'En pausa'] as const
 export type Estado = (typeof ESTADOS)[number]
 
+// En pantalla, el estado «Prospecto» es la pestaña «Por contactar».
+export const nombreEstado = (estado: string) => (estado === 'Prospecto' ? 'Por contactar' : estado)
+
 // Estados que cuentan como conversación abierta (ya se habló, todavía no hay respuesta final).
 export const EN_CURSO: readonly Estado[] = ['Contactado', 'Interesado']
 

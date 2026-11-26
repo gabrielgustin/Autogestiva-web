@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Ban, CalendarClock, Check, ChevronRight, Copy, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, MoreHorizontal, PauseCircle, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, UserRound, X } from 'lucide-react'
+import { Ban, CalendarClock, Check, ChevronRight, Copy, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, MoreHorizontal, PauseCircle, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, Undo2, UserRound, X } from 'lucide-react'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
-import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, daysBetween, isoIn, mensajeSeguimiento, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
+import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, daysBetween, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
 
 // Sección Prospectos del panel: agenda del día, embudo por estado, banco de prospectos y ficha con WhatsApp e historial.
 type Toast = { message: string; tone: 'ok' | 'error' }
@@ -99,7 +99,9 @@ export function ProspectsDashboard() {
   }, [api])
 
   const save = useCallback(async (id: string, patch: Patch, evento?: Evento) => {
-    const updated: Prospect = await api('/api/administracion/prospects', { method: 'PUT', body: JSON.stringify({ id, ...patch, evento }) })
+    // Volver a «Por contactar» lo saca de la agenda: ya no hay un paso pendiente.
+    const cambios = patch.estado === 'Prospecto' ? { ...patch, proximoPaso: '', proximoFecha: '' } : patch
+    const updated: Prospect = await api('/api/administracion/prospects', { method: 'PUT', body: JSON.stringify({ id, ...cambios, evento }) })
     setProspects((list) => list.map((p) => (p.id === id ? updated : p)))
     return updated
   }, [api])
@@ -110,7 +112,7 @@ export function ProspectsDashboard() {
     setProspects((list) => list.map((p) => (p.id === id ? { ...p, estado: to } : p)))
     try {
       await save(id, { estado: to })
-      notify(`${current.negocio} pasó a «${to}»`)
+      notify(`${current.negocio} pasó a «${nombreEstado(to)}»`)
     } catch (e) {
       setProspects((list) => list.map((p) => (p.id === id ? current : p)))
       notify(e instanceof Error ? e.message : 'No se pudo mover', 'error')
@@ -176,8 +178,9 @@ export function ProspectsDashboard() {
       // Vertical: se desplaza la página (debajo de los títulos fijos) cerca del borde superior o inferior.
       const topEdge = headRow.current?.getBoundingClientRect().bottom ?? 0
       const zoneY = 90
-      if (d.y < topEdge + zoneY) window.scrollBy(0, -speed(topEdge + zoneY - d.y, zoneY))
-      else if (d.y > window.innerHeight - zoneY) window.scrollBy(0, speed(d.y - (window.innerHeight - zoneY), zoneY))
+      if (d.y < topEdge + zoneY) window.scrollBy({ top: -speed(topEdge + zoneY - d.y, zoneY), behavior: 'instant' })
+      // Sobre la barra «devolver a Por contactar» la página no se mueve.
+      else if (d.y > window.innerHeight - zoneY && colAt(d.x, d.y) !== 'Prospecto') window.scrollBy({ top: speed(d.y - (window.innerHeight - zoneY), zoneY), behavior: 'instant' })
       setOverCol(colAt(d.x, d.y) ?? null)
       place()
       raf = requestAnimationFrame(tick)
@@ -340,19 +343,21 @@ export function ProspectsDashboard() {
                 data-col={col}
                 className={`flex w-[280px] shrink-0 snap-start flex-col rounded-2xl border transition-colors duration-150 ${isOver ? 'border-brand bg-brand-light/70 ring-4 ring-brand/15' : 'border-line bg-white/60'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-80' : ''}`}
               >
-                <div className="flex min-h-32 flex-1 flex-col gap-2 p-2">
+                <div className={`flex min-h-32 flex-1 flex-col p-2 ${col === 'Rechazado' ? 'gap-1' : 'gap-2'}`}>
                   {items.map((p) => {
                     const when = p.proximoFecha ? cuando(p.proximoFecha, today) : null
+                    // En «Rechazado» la tarjeta es una sola línea: ahí importa ver muchas, no el detalle.
+                    const compacta = col === 'Rechazado'
                     return (
                       <div
                         key={p.id}
                         onPointerDown={(e) => startDrag(e, p.id)}
                         className={`relative shrink-0 select-none rounded-xl border border-line bg-white shadow-[0_1px_0_rgba(11,19,34,0.04)] transition hover:border-ink/25 hover:shadow-[0_12px_30px_-18px_rgba(11,19,34,0.35)] ${dragging ? '' : 'cursor-grab'} ${dragging?.id === p.id ? 'border-dashed border-ink/25 opacity-35 shadow-none' : ''}`}
                       >
-                        <button type="button" onClick={() => { if (!dragMoved.current) setOpenId(p.id) }} className="block w-full cursor-[inherit] p-3 pr-9 text-left">
-                          <CardBody p={p} when={when} today={today} />
+                        <button type="button" title={compacta ? p.negocio : undefined} onClick={() => { if (!dragMoved.current) setOpenId(p.id) }} className={`block w-full cursor-[inherit] text-left ${compacta ? 'py-1.5 pl-2.5 pr-9' : 'p-3 pr-9'}`}>
+                          {compacta ? <span className="block truncate text-[13px] font-medium">{p.negocio}</span> : <CardBody p={p} when={when} today={today} />}
                         </button>
-                        <button type="button" data-no-drag aria-label={`Opciones de ${p.negocio}`} aria-haspopup="menu" aria-expanded={menuId === p.id} onClick={(e) => setMenu(menuId === p.id ? null : { id: p.id, anchor: e.currentTarget.getBoundingClientRect() })} className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-paper hover:text-ink">
+                        <button type="button" data-no-drag aria-label={`Opciones de ${p.negocio}`} aria-haspopup="menu" aria-expanded={menuId === p.id} onClick={(e) => setMenu(menuId === p.id ? null : { id: p.id, anchor: e.currentTarget.getBoundingClientRect() })} className={`absolute right-1.5 inline-flex items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-paper hover:text-ink ${compacta ? 'top-1 size-6' : 'top-1.5 size-7'}`}>
                           <MoreHorizontal className="size-4" />
                         </button>
                         {menu?.id === p.id && <CardMenu p={p} anchor={menu.anchor} today={today} onClose={() => setMenu(null)} onOpen={() => { setMenu(null); setOpenId(p.id) }} onAction={(patch, evento, ok) => quick(p.id, patch, evento, ok)} notify={notify} />}
@@ -381,7 +386,7 @@ export function ProspectsDashboard() {
               </select>
               <select aria-label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} className={`${inputClass} md:w-44`}>
                 <option value="todos">Todos los estados</option>
-                {ESTADOS.map((name) => <option key={name}>{name}</option>)}
+                {ESTADOS.map((name) => <option key={name} value={name}>{nombreEstado(name)}</option>)}
               </select>
               <button type="button" aria-pressed={soloWa} onClick={() => setSoloWa((v) => !v)} className={`col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors ${soloWa ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-line bg-white text-ink/70 hover:text-ink'}`}>
                 <MessageCircle className="size-4" /> Con WhatsApp
@@ -401,7 +406,7 @@ export function ProspectsDashboard() {
                       <span className="block truncate text-xs text-muted-ink">{[p.rubro, p.ciudad].filter(Boolean).join(' · ') || '—'}{p.motivo && <span className="text-orange-600"> · {p.motivo.split(';')[0]}</span>}</span>
                     </span>
                     <span className="hidden truncate text-xs text-muted-ink md:block">{p.producto}</span>
-                    <span className="hidden md:block"><Badge tone={ESTADO_TONE[p.estado]}>{p.estado}</Badge></span>
+                    <span className="hidden md:block"><Badge tone={ESTADO_TONE[p.estado]}>{nombreEstado(p.estado)}</Badge></span>
                     <span className="flex items-center justify-end gap-2 text-ink/35">
                       {p.web && <Globe className="size-4" aria-label="Tiene web" />}
                       {waLink(p.whatsapp) ? <MessageCircle className="size-4 text-emerald-600" aria-label="Tiene WhatsApp" /> : p.whatsapp ? <Phone className="size-4" aria-label="Tiene teléfono" /> : null}
@@ -431,6 +436,12 @@ export function ProspectsDashboard() {
       {open && <ProspectSheet key={open.id} prospect={open} api={api} save={save} notify={notify} today={today} onClose={() => setOpenId(null)} onDeleted={(id) => { setProspects((list) => list.filter((p) => p.id !== id)); setOpenId(null) }} />}
       {creating && <NewProspect api={api} onClose={() => setCreating(false)} onCreated={(p) => { setProspects((list) => [p, ...list]); setCreating(false); setOpenId(p.id); notify('Prospecto cargado') }} />}
 
+      {dragging && createPortal(
+        <div data-col="Prospecto" className={`fixed inset-x-4 bottom-4 z-[60] mx-auto flex h-16 max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-sm font-semibold shadow-[0_20px_50px_-20px_rgba(11,19,34,0.5)] transition-colors ${overCol === 'Prospecto' ? 'border-brand bg-brand text-white' : 'border-ink/25 bg-white text-ink/70'}`}>
+          <Undo2 className="size-4" /> Soltá acá para devolver a «Por contactar»
+        </div>,
+        document.body,
+      )}
       {dragging && createPortal(
         <div ref={ghost} aria-hidden="true" style={{ width: dragging.width }} className="pointer-events-none fixed left-0 top-0 z-[100] rounded-xl border border-ink/15 bg-white p-3 pr-9 shadow-[0_28px_60px_-20px_rgba(11,19,34,0.55)] will-change-transform">
           {(() => { const p = prospects.find((x) => x.id === dragging.id); return p ? <CardBody p={p} when={p.proximoFecha ? cuando(p.proximoFecha, today) : null} today={today} /> : null })()}
@@ -559,8 +570,8 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="estado">Estado</label>
-          <select id="estado" value={p.estado} disabled={busy} onChange={(e) => run({ estado: e.target.value as Estado }, undefined, `Pasó a «${e.target.value}»`)} className="h-9 rounded-full border border-line bg-paper px-3 text-sm font-semibold outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
-            {ESTADOS.map((e) => <option key={e}>{e}</option>)}
+          <select id="estado" value={p.estado} disabled={busy} onChange={(e) => run({ estado: e.target.value as Estado }, undefined, `Pasó a «${nombreEstado(e.target.value)}»`)} className="h-9 rounded-full border border-line bg-paper px-3 text-sm font-semibold outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
+            {ESTADOS.map((e) => <option key={e} value={e}>{nombreEstado(e)}</option>)}
           </select>
           {links.map(({ label, url, icon: Icon, view }) => {
             const pill = 'inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-sm font-medium text-ink/80 transition-colors hover:border-ink/30 hover:text-ink'
@@ -737,11 +748,12 @@ function CardMenu({ p, anchor, today, onClose, onOpen, onAction, notify }: { p: 
         <div className="my-1.5 h-px bg-line" />
         <p className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-ink">Mover a</p>
         <div className="flex flex-wrap gap-1 px-1.5 pb-1">
-          {ESTADOS.filter((e) => e !== p.estado && e !== 'Rechazado' && e !== 'En pausa').map((e) => (
+          {ESTADOS.filter((e) => e !== p.estado && e !== 'Prospecto' && e !== 'Rechazado' && e !== 'En pausa').map((e) => (
             <button key={e} role="menuitem" type="button" onClick={() => act({ estado: e }, undefined, `${p.negocio} pasó a «${e}»`)} className="rounded-full px-2.5 py-1 text-xs font-semibold text-ink/75 ring-1 ring-inset ring-line transition-colors hover:bg-paper hover:text-ink">{e}</button>
           ))}
         </div>
         <div className="my-1.5 h-px bg-line" />
+        <button role="menuitem" type="button" className={item} onClick={() => act({ estado: 'Prospecto' }, undefined, `${p.negocio} volvió a «Por contactar»`)}><Undo2 /> Devolver a Por contactar</button>
         {p.estado !== 'En pausa' && <button role="menuitem" type="button" className={item} onClick={() => act({ estado: 'En pausa', proximoPaso: '', proximoFecha: '' }, undefined, `${p.negocio} quedó en pausa`)}><PauseCircle /> Poner en pausa</button>}
         {p.estado !== 'Rechazado' && <button role="menuitem" type="button" className={`${item} text-red-600 hover:bg-red-50 hover:text-red-700 [&>svg]:text-red-500`} onClick={() => act({ estado: 'Rechazado', proximoPaso: '', proximoFecha: '' }, undefined, `${p.negocio} pasó a «Rechazado»`)}><Ban /> Marcar como rechazado</button>}
       </div>

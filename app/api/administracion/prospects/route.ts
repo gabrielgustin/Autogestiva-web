@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin/admin-session'
 import { isDbConfigured, sql } from '@/lib/admin/db'
-import { FIELDS, toDbRow, type Prospect } from '@/lib/admin/prospects'
+import { FIELDS, nombreEstado, toDbRow, type Prospect } from '@/lib/admin/prospects'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,7 +85,7 @@ export async function PUT(request: Request) {
     const [row] = columns.length
       ? await sql().query(`update prospects set ${columns.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now() where id = $1 returning ${COLUMNS}`, [id, ...Object.values(parsed.row)])
       : await sql().query(`select ${COLUMNS} from prospects where id = $1`, [id])
-    if (parsed.row.estado && parsed.row.estado !== before.estado) await logEvent(id, 'Estado', `${before.estado} → ${parsed.row.estado}`)
+    if (parsed.row.estado && parsed.row.estado !== before.estado) await logEvent(id, 'Estado', `${nombreEstado(before.estado)} → ${nombreEstado(parsed.row.estado)}`)
     if (evento && typeof evento === 'object') await logEvent(id, evento.tipo, evento.texto)
     return NextResponse.json(toProspect(row))
   } catch (error) {
