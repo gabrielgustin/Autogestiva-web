@@ -30,6 +30,7 @@ export const card = 'rounded-2xl border border-line bg-white'
 const nav = [
   { href: '/administracion/clientes', label: 'Clientes' },
   { href: '/administracion', label: 'Infraestructura' },
+  { href: '/administracion/prospectos', label: 'Prospectos' },
 ]
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
