@@ -16,7 +16,7 @@ function secret() {
   return createHash('sha256').update(`admin-session:${base}`).digest('hex')
 }
 
-function sign(payload: string) {
+export function sign(payload: string) {
   return createHmac('sha256', secret()).update(payload).digest('base64url')
 }
 

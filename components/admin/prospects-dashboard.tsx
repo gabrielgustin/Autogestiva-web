@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, ChevronRight, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, UserRound, X } from 'lucide-react'
+import { Ban, CalendarClock, Check, ChevronRight, Copy, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, MoreHorizontal, PauseCircle, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, UserRound, X } from 'lucide-react'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, daysBetween, isoIn, mensajeSeguimiento, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
 
@@ -22,6 +22,8 @@ const MEDIOS = [
   { tipo: 'Visita', icon: UserRound },
   { tipo: 'Nota', icon: StickyNote },
 ]
+// Tipos de próximo paso: una reunión o un presupuesto se agendan acá, no son columnas del embudo.
+const PASOS = ['Recontactar', 'Reunión', 'Enviar presupuesto']
 const PLAZOS = [
   { label: 'Mañana', days: 1 },
   { label: '3 días', days: 3 },
@@ -57,6 +59,9 @@ export function ProspectsDashboard() {
   const [creating, setCreating] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropOn, setDropOn] = useState<Estado | null>(null)
+  const [menu, setMenu] = useState<{ id: string; anchor: DOMRect } | null>(null)
+  const menuId = menu?.id ?? null
+  const board = useRef<HTMLDivElement>(null)
   const today = isoIn(0)
 
   const notify = useCallback((message: string, tone: Toast['tone'] = 'ok') => setToast({ message, tone }), [])
@@ -103,6 +108,15 @@ export function ProspectsDashboard() {
     }
   }
 
+  async function quick(id: string, patch: Patch, evento: Evento | undefined, ok: string) {
+    try {
+      await save(id, patch, evento)
+      notify(ok)
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo guardar', 'error')
+    }
+  }
+
   const agenda = useMemo(
     () => prospects.filter((p) => p.proximoFecha && p.proximoFecha <= today && !CERRADOS.includes(p.estado)).sort((a, b) => a.proximoFecha.localeCompare(b.proximoFecha)),
     [prospects, today],
@@ -138,7 +152,7 @@ export function ProspectsDashboard() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Para hoy" value={loading ? '…' : agenda.length} detail={agenda.length ? 'Seguimientos que tocan o se atrasaron' : 'Nada pendiente'} icon={<CalendarClock />} />
         <Stat label="Demos para enviar" value={loading ? '…' : counts.by['Demo lista']} detail="Listas, todavía sin mandar" icon={<Send />} />
-        <Stat label="En conversación" value={loading ? '…' : counts.enCurso} detail={`${counts.by['Presupuesto enviado']} con presupuesto`} icon={<Flame />} />
+        <Stat label="En conversación" value={loading ? '…' : counts.enCurso} detail={`${counts.by.Interesado} interesados`} icon={<Flame />} />
         <Stat label="Clientes ganados" value={loading ? '…' : counts.by.Cliente} detail={`${counts.tasa}% de los contactados`} icon={<Trophy />} />
       </div>
 
@@ -152,8 +166,8 @@ export function ProspectsDashboard() {
             {agenda.map((p) => {
               const when = cuando(p.proximoFecha, today)
               return (
-                <li key={p.id}>
-                  <button type="button" onClick={() => setOpenId(p.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-paper md:px-5">
+                <li key={p.id} className="flex items-center">
+                  <button type="button" onClick={() => setOpenId(p.id)} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left transition-colors hover:bg-paper md:pl-5">
                     <Badge tone={when.tone} className="w-[92px] justify-center">{when.text}</Badge>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">{p.negocio}</span>
@@ -161,6 +175,10 @@ export function ProspectsDashboard() {
                     </span>
                     {waLink(p.whatsapp) && <MessageCircle className="size-4 shrink-0 text-emerald-600" aria-label="Tiene WhatsApp" />}
                     <ChevronRight className="size-4 shrink-0 text-ink/30" />
+                  </button>
+                  {/* Hecho: el paso se cumplió, queda en el historial y sale de la agenda. */}
+                  <button type="button" onClick={() => quick(p.id, { proximoPaso: '', proximoFecha: '' }, { tipo: 'Hecho', texto: p.proximoPaso || 'Seguimiento' }, `${p.negocio}: hecho, salió de la agenda`)} className="mx-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:mx-5">
+                    <Check className="size-4" /> Hecho
                   </button>
                 </li>
               )
@@ -183,7 +201,18 @@ export function ProspectsDashboard() {
       {loading ? (
         <div className={`${card} mt-4`}><EmptyState>Cargando prospectos…</EmptyState></div>
       ) : tab === 'embudo' ? (
-        <div className="-mx-4 mt-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 md:-mx-8 md:px-8">
+        <div
+          ref={board}
+          onDragOver={(e) => {
+            // Arrastrando cerca de un borde, el tablero se desplaza solo hacia ese lado.
+            const el = board.current
+            if (!el) return
+            const { left, right } = el.getBoundingClientRect()
+            if (e.clientX < left + 90) el.scrollLeft -= 24
+            else if (e.clientX > right - 90) el.scrollLeft += 24
+          }}
+          className={`-mx-4 mt-4 flex gap-3 overflow-x-auto px-4 pb-4 md:-mx-8 md:px-8 ${dragId ? '' : 'snap-x'}`}
+        >
           {ESTADOS.filter((e) => e !== 'Prospecto').map((col) => {
             const items = prospects.filter((p) => p.estado === col).sort((a, b) => (a.proximoFecha || '9999').localeCompare(b.proximoFecha || '9999'))
             return (
@@ -203,15 +232,14 @@ export function ProspectsDashboard() {
                   {items.map((p) => {
                     const when = p.proximoFecha ? cuando(p.proximoFecha, today) : null
                     return (
-                      <button
+                      <div
                         key={p.id}
-                        type="button"
                         draggable
-                        onDragStart={() => setDragId(p.id)}
+                        onDragStart={() => { setDragId(p.id); setMenu(null) }}
                         onDragEnd={() => { setDragId(null); setDropOn(null) }}
-                        onClick={() => setOpenId(p.id)}
-                        className={`rounded-xl border border-line bg-white p-3 text-left shadow-[0_1px_0_rgba(11,19,34,0.04)] transition hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-[0_12px_30px_-18px_rgba(11,19,34,0.35)] ${dragId === p.id ? 'opacity-40' : ''}`}
+                        className={`relative rounded-xl border border-line bg-white shadow-[0_1px_0_rgba(11,19,34,0.04)] transition hover:border-ink/25 hover:shadow-[0_12px_30px_-18px_rgba(11,19,34,0.35)] ${dragId === p.id ? 'opacity-40' : ''}`}
                       >
+                        <button type="button" onClick={() => setOpenId(p.id)} className="block w-full p-3 pr-9 text-left">
                         <span className="line-clamp-2 font-semibold leading-snug">{p.negocio}</span>
                         <span className="mt-0.5 block truncate text-xs text-muted-ink">{p.rubro || p.producto}</span>
                         <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -219,7 +247,12 @@ export function ProspectsDashboard() {
                           {p.fechaContacto && <span className="text-[11px] text-muted-ink">Contacto hace {Math.max(0, daysBetween(p.fechaContacto, today))} d</span>}
                           {!p.fechaContacto && p.demo && <span className="text-[11px] text-muted-ink">Demo lista</span>}
                         </span>
-                      </button>
+                        </button>
+                        <button type="button" aria-label={`Opciones de ${p.negocio}`} aria-haspopup="menu" aria-expanded={menuId === p.id} onClick={(e) => setMenu(menuId === p.id ? null : { id: p.id, anchor: e.currentTarget.getBoundingClientRect() })} className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-paper hover:text-ink">
+                          <MoreHorizontal className="size-4" />
+                        </button>
+                        {menu?.id === p.id && <CardMenu p={p} anchor={menu.anchor} today={today} onClose={() => setMenu(null)} onOpen={() => { setMenu(null); setOpenId(p.id) }} onAction={(patch, evento, ok) => quick(p.id, patch, evento, ok)} notify={notify} />}
+                      </div>
                     )
                   })}
                   {items.length === 0 && <p className="px-2 py-6 text-center text-xs text-ink/35">Soltá una tarjeta acá</p>}
@@ -460,6 +493,10 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
             <label className="text-xs font-medium text-muted-ink">Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={`${inputClass} mt-1`} /></label>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
+            {PASOS.map((name) => (
+              <button key={name} type="button" onClick={() => setPaso(name)} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors ${paso === name ? 'bg-orange-50 text-orange-700 ring-orange-200' : 'text-muted-ink ring-line hover:text-ink'}`}>{name}</button>
+            ))}
+            <span className="mx-1 w-px self-stretch bg-line" />
             {PLAZOS.map(({ label, days }) => (
               <button key={label} type="button" onClick={() => setFecha(isoIn(days))} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors ${fecha === isoIn(days) ? 'bg-brand-light text-brand ring-brand/30' : 'text-muted-ink ring-line hover:text-ink'}`}>{label}</button>
             ))}
@@ -533,8 +570,54 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   )
 }
 
-// Muestra una web a pantalla completa encima de la ficha. Las webs sin HTTPS no se pueden mostrar dentro de una página
-// segura, y algunas (Google Drive, Instagram) se niegan a aparecer dentro de otra: para esos casos está «Abrir en pestaña nueva».
+// Menú de los tres puntos de cada tarjeta del embudo: atajos sin abrir la ficha.
+function CardMenu({ p, anchor, today, onClose, onOpen, onAction, notify }: { p: Prospect; anchor: DOMRect; today: string; onClose: () => void; onOpen: () => void; onAction: (patch: Patch, evento: Evento | undefined, ok: string) => void; notify: (m: string, t?: Toast['tone']) => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const act = (patch: Patch, evento: Evento | undefined, ok: string) => { onClose(); onAction(patch, evento, ok) }
+  const nuevo = SIN_CONTACTO.includes(p.estado)
+  const wa = waLink(p.whatsapp, nuevo ? primerMensaje(p) : mensajeSeguimiento(p))
+  const item = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-ink/85 transition-colors hover:bg-paper hover:text-ink [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-ink/45'
+  // Portal con posición fija junto al botón: así el menú no queda recortado por el scroll del tablero.
+  const width = 256
+  const below = window.innerHeight - anchor.bottom > 420
+  const position = { left: Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8)), ...(below ? { top: anchor.bottom + 4 } : { bottom: window.innerHeight - anchor.top + 4 }) }
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[45]" onClick={onClose} onWheel={onClose} aria-hidden="true" />
+      <div role="menu" aria-label={`Opciones de ${p.negocio}`} style={position} className="animate-rise-in fixed z-[46] w-64 rounded-2xl border border-line bg-white p-1.5 shadow-[0_24px_60px_-20px_rgba(11,19,34,0.45)] [animation-duration:180ms]">
+        <button role="menuitem" type="button" className={item} onClick={onOpen}><ChevronRight /> Abrir ficha</button>
+        {wa && (
+          <a role="menuitem" href={wa} target="_blank" rel="noreferrer" className={item} onClick={() => act({ fechaContacto: today, ...(nuevo && { estado: 'Contactado' as Estado }), proximoPaso: p.proximoPaso || 'Recontactar', proximoFecha: p.proximoFecha || isoIn(3) }, { tipo: 'WhatsApp', texto: nuevo ? 'Primer mensaje enviado desde el embudo' : 'Mensaje de seguimiento enviado desde el embudo' }, 'Contacto registrado')}>
+            <MessageCircle /> Escribir por WhatsApp
+          </a>
+        )}
+        <button role="menuitem" type="button" className={item} onClick={() => act({ proximoPaso: 'Recontactar', proximoFecha: isoIn(1) }, undefined, 'Agendado: recontactar mañana')}><CalendarClock /> Recontactar mañana</button>
+        <button role="menuitem" type="button" className={item} onClick={() => act({ proximoPaso: 'Recontactar', proximoFecha: isoIn(7) }, undefined, 'Agendado: recontactar en una semana')}><CalendarClock /> Recontactar en una semana</button>
+        {p.demo && (
+          <button role="menuitem" type="button" className={item} onClick={() => { onClose(); navigator.clipboard.writeText(p.demo).then(() => notify('Link de la demo copiado'), () => notify('No se pudo copiar', 'error')) }}><Copy /> Copiar link de la demo</button>
+        )}
+        <div className="my-1.5 h-px bg-line" />
+        <p className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-ink">Mover a</p>
+        <div className="flex flex-wrap gap-1 px-1.5 pb-1">
+          {ESTADOS.filter((e) => e !== p.estado && e !== 'Rechazado' && e !== 'En pausa').map((e) => (
+            <button key={e} role="menuitem" type="button" onClick={() => act({ estado: e }, undefined, `${p.negocio} pasó a «${e}»`)} className="rounded-full px-2.5 py-1 text-xs font-semibold text-ink/75 ring-1 ring-inset ring-line transition-colors hover:bg-paper hover:text-ink">{e}</button>
+          ))}
+        </div>
+        <div className="my-1.5 h-px bg-line" />
+        {p.estado !== 'En pausa' && <button role="menuitem" type="button" className={item} onClick={() => act({ estado: 'En pausa', proximoPaso: '', proximoFecha: '' }, undefined, `${p.negocio} quedó en pausa`)}><PauseCircle /> Poner en pausa</button>}
+        {p.estado !== 'Rechazado' && <button role="menuitem" type="button" className={`${item} text-red-600 hover:bg-red-50 hover:text-red-700 [&>svg]:text-red-500`} onClick={() => act({ estado: 'Rechazado', proximoPaso: '', proximoFecha: '' }, undefined, `${p.negocio} pasó a «Rechazado»`)}><Ban /> Marcar como rechazado</button>}
+      </div>
+    </>,
+    document.body,
+  )
+}
+
+// Muestra una web a pantalla completa encima de la ficha. Las que no tienen HTTPS o no se dejan mostrar dentro de otra
+// página llegan a través del servidor del panel (lib/admin/site-proxy.ts), sin JavaScript: sliders y menús animados no andan.
 function SiteViewer({ title, url: original, onClose }: { title: string; url: string; onClose: () => void }) {
   // Los archivos de Drive (muchas cartas actuales) sí se dejan mostrar en su modo «preview».
   const url = original.replace(/^(https:\/\/drive\.google\.com\/file\/d\/[^/?#]+)\/view.*$/, '$1/preview')
@@ -543,14 +626,12 @@ function SiteViewer({ title, url: original, onClose }: { title: string; url: str
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  // null mientras se consulta; después: se muestra, no tiene HTTPS o no se deja mostrar dentro de otra página.
-  const [mode, setMode] = useState<'frame' | 'insecure' | 'blocked' | null>(url.startsWith('http://') ? 'insecure' : null)
+  const [frame, setFrame] = useState<{ src: string; proxied: boolean } | null>(null)
   useEffect(() => {
-    if (url.startsWith('http://')) return
     fetch(`/api/administracion/prospects/frame?url=${encodeURIComponent(url)}`)
       .then((r) => r.json())
-      .then((d) => setMode(d.finalUrl?.startsWith('http://') ? 'insecure' : d.embeddable === false ? 'blocked' : 'frame'))
-      .catch(() => setMode('frame'))
+      .then((d) => setFrame(d.src ? d : { src: url, proxied: false }))
+      .catch(() => setFrame({ src: url, proxied: false }))
   }, [url])
   // Portal al body: la animación de la ficha deja un transform que encerraría al visor dentro de ella.
   return createPortal(
@@ -559,7 +640,7 @@ function SiteViewer({ title, url: original, onClose }: { title: string; url: str
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-3 sm:px-5">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{title}</p>
-          <p className="truncate text-xs text-muted-ink">{url}</p>
+          <p className="truncate text-xs text-muted-ink">{url}{frame?.proxied && ' · vista a través del panel, sin animaciones'}</p>
         </div>
         <a href={url} target="_blank" rel="noreferrer" className={`${btn.secondary} h-9 shrink-0 px-3`}>
           <ExternalLink className="size-4" /> <span className="hidden sm:inline">Abrir en pestaña nueva</span>
@@ -568,23 +649,11 @@ function SiteViewer({ title, url: original, onClose }: { title: string; url: str
           <X className="size-4" />
         </button>
       </header>
-      {mode === 'frame' ? (
-        <iframe src={url} title={title} className="w-full flex-1 border-0 bg-white" />
+      {frame ? (
+        // Lo que pasa por el proxy llega sin JavaScript (encabezado CSP), así no puede tocar el panel.
+        <iframe src={frame.src} title={title} className="w-full flex-1 border-0 bg-white" />
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-paper p-6 text-center">
-          {mode === null ? (
-            <p className="text-sm text-muted-ink">Cargando…</p>
-          ) : (
-            <>
-              <p className="max-w-md text-sm text-muted-ink">
-                {mode === 'insecure'
-                  ? 'Esta web no tiene HTTPS, así que el navegador no deja mostrarla dentro del panel (justamente uno de los motivos para ofrecerle el rediseño).'
-                  : 'Esta página no se deja mostrar dentro de otra web (pasa con Google Sites, Instagram y algunas más).'}
-              </p>
-              <a href={url} target="_blank" rel="noreferrer" className={btn.primary}><ExternalLink className="size-4" /> Abrirla en pestaña nueva</a>
-            </>
-          )}
-        </div>
+        <div className="flex flex-1 items-center justify-center bg-paper text-sm text-muted-ink">Cargando…</div>
       )}
     </div>,
     document.body,

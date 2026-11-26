@@ -1,10 +1,11 @@
 // Piezas compartidas por la API, la pantalla de prospectos y el script de importación (sin dependencias de servidor ni imports).
 
-export const ESTADOS = ['Prospecto', 'Demo lista', 'Contactado', 'Esperando respuesta', 'Interesado', 'Reunión agendada', 'Presupuesto enviado', 'Cliente', 'Rechazado', 'En pausa'] as const
+// Reuniones y presupuestos no son estados: se agendan como próximo paso de la ficha.
+export const ESTADOS = ['Prospecto', 'Demo lista', 'Contactado', 'Interesado', 'Cliente', 'Rechazado', 'En pausa'] as const
 export type Estado = (typeof ESTADOS)[number]
 
 // Estados que cuentan como conversación abierta (ya se habló, todavía no hay respuesta final).
-export const EN_CURSO: readonly Estado[] = ['Contactado', 'Esperando respuesta', 'Interesado', 'Reunión agendada', 'Presupuesto enviado']
+export const EN_CURSO: readonly Estado[] = ['Contactado', 'Interesado']
 
 export const PRODUCTOS = ['Rediseño web', 'Carta digital', 'Landing web', 'Web + panel', 'Juegos para eventos', 'Web', 'Otro']
 
@@ -12,10 +13,7 @@ export const ESTADO_TONE: Record<Estado, 'gray' | 'blue' | 'orange' | 'amber' | 
   Prospecto: 'gray',
   'Demo lista': 'blue',
   Contactado: 'amber',
-  'Esperando respuesta': 'amber',
   Interesado: 'orange',
-  'Reunión agendada': 'orange',
-  'Presupuesto enviado': 'orange',
   Cliente: 'green',
   Rechazado: 'red',
   'En pausa': 'gray',
