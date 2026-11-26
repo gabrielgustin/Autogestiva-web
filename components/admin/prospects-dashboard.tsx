@@ -396,6 +396,7 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
       eyebrow={[p.producto, p.rubro].filter(Boolean).join(' · ')}
       title={p.negocio}
       onClose={onClose}
+      wide
       footer={
         <div className="flex items-center justify-between gap-3">
           <button type="button" onClick={eliminar} className={btn.danger} aria-label="Eliminar prospecto"><Trash2 className="size-4" /></button>
@@ -423,13 +424,9 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
           })}
         </div>
 
-        {p.motivo && (
-          <div className="flex gap-3 rounded-2xl bg-orange-50 p-4 text-sm text-orange-900 ring-1 ring-inset ring-orange-200">
-            <Sparkles className="mt-0.5 size-4 shrink-0 text-orange-600" />
-            <div><p className="font-semibold">Qué ofrecerle</p><p className="mt-1 leading-relaxed">{p.motivo.replace(/;/g, ' ·')}</p></div>
-          </div>
-        )}
-
+        {/* En pantallas anchas: a la izquierda lo que se hace (mensaje y contacto), a la derecha lo que se sabe. */}
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="flex flex-col gap-6">
         <section className="rounded-2xl border border-line p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold">Mensaje de WhatsApp</h3>
@@ -470,6 +467,15 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
           </div>
           <button type="button" disabled={busy || (medio === 'Nota' && !nota.trim())} onClick={guardarContacto} className={`${btn.primary} mt-4 w-full`}>{medio === 'Nota' ? 'Guardar nota' : 'Guardar contacto'}</button>
         </section>
+
+        </div>
+        <div className="flex flex-col gap-6">
+        {p.motivo && (
+          <div className="flex gap-3 rounded-2xl bg-orange-50 p-4 text-sm text-orange-900 ring-1 ring-inset ring-orange-200">
+            <Sparkles className="mt-0.5 size-4 shrink-0 text-orange-600" />
+            <div><p className="font-semibold">Qué ofrecerle</p><p className="mt-1 leading-relaxed">{p.motivo.replace(/;/g, ' ·')}</p></div>
+          </div>
+        )}
 
         <details className="group rounded-2xl border border-line p-4">
           <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
@@ -518,6 +524,8 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
             </ol>
           )}
         </section>
+        </div>
+        </div>
       </div>
       {confirmDialog}
       {viewing && <SiteViewer title={`${viewing.label} · ${p.negocio}`} url={viewing.url} onClose={() => setViewing(null)} />}

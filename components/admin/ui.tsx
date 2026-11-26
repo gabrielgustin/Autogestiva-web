@@ -111,7 +111,7 @@ export function Badge({ tone = 'gray', children, className = '' }: { tone?: keyo
 }
 
 // Ventana modal: cierra con Escape o tocando afuera, y bloquea el scroll de la página mientras está abierta.
-export function Modal({ title, eyebrow, onClose, children, footer }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
+export function Modal({ title, eyebrow, onClose, children, footer, wide }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
   useEffect(() => {
     // Escape con un calendario o una lista abiertos cierra solo ese desplegable, no la ventana.
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper], [data-confirm-dialog]')) onClose() }
@@ -126,7 +126,7 @@ export function Modal({ title, eyebrow, onClose, children, footer }: { title: Re
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className="animate-rise-in flex max-h-[92vh] [animation-duration:280ms] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] sm:rounded-3xl">
+      <section role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className={`animate-rise-in flex max-h-[92vh] [animation-duration:280ms] w-full ${wide ? 'max-w-6xl' : 'max-w-2xl'} flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] sm:rounded-3xl`}>
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-7 sm:py-5">
           <div className="min-w-0">
             {eyebrow && <p className="eyebrow text-[10px] text-orange-600">{eyebrow}</p>}
