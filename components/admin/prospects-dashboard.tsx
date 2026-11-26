@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, ChevronRight, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, UserRound } from 'lucide-react'
+import { CalendarClock, ChevronRight, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, UserRound, X } from 'lucide-react'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, daysBetween, isoIn, mensajeSeguimiento, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
 
@@ -318,6 +319,7 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   const [fecha, setFecha] = useState(p.proximoFecha)
   const [mensaje, setMensaje] = useState(() => (SIN_CONTACTO.includes(p.estado) ? primerMensaje(p) : mensajeSeguimiento(p)))
   const [busy, setBusy] = useState(false)
+  const [viewing, setViewing] = useState<{ label: string; url: string } | null>(null)
   const wa = waLink(p.whatsapp, mensaje)
 
   const loadEvents = useCallback(() => {
@@ -382,12 +384,12 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   }
 
   const links = [
-    p.web && { label: p.producto === 'Carta digital' ? 'Carta actual' : 'Web actual', url: p.web, icon: Globe },
-    p.demo && { label: 'Demo', url: p.demo, icon: MonitorSmartphone },
+    p.web && { label: p.producto === 'Carta digital' ? 'Carta actual' : 'Web actual', url: p.web, icon: Globe, view: true },
+    p.demo && { label: 'Demo', url: p.demo, icon: MonitorSmartphone, view: true },
     p.instagram && { label: 'Instagram', url: p.instagram, icon: Instagram },
     p.email && { label: 'Email', url: `mailto:${p.email}`, icon: Mail },
     p.whatsapp && { label: p.whatsapp, url: `tel:${p.whatsapp}`, icon: Phone },
-  ].filter(Boolean) as { label: string; url: string; icon: typeof Globe }[]
+  ].filter(Boolean) as { label: string; url: string; icon: typeof Globe; view?: boolean }[]
 
   return (
     <Modal
@@ -407,11 +409,18 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
           <select id="estado" value={p.estado} disabled={busy} onChange={(e) => run({ estado: e.target.value as Estado }, undefined, `Pasó a «${e.target.value}»`)} className="h-9 rounded-full border border-line bg-paper px-3 text-sm font-semibold outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
             {ESTADOS.map((e) => <option key={e}>{e}</option>)}
           </select>
-          {links.map(({ label, url, icon: Icon }) => (
-            <a key={label} href={url.startsWith('mailto:') || url.startsWith('tel:') ? url : href(url)} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-sm font-medium text-ink/80 transition-colors hover:border-ink/30 hover:text-ink">
-              <Icon className="size-3.5" /> {label}
-            </a>
-          ))}
+          {links.map(({ label, url, icon: Icon, view }) => {
+            const pill = 'inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-sm font-medium text-ink/80 transition-colors hover:border-ink/30 hover:text-ink'
+            return view ? (
+              <button key={label} type="button" onClick={() => setViewing({ label, url: href(url) })} className={pill}>
+                <Icon className="size-3.5" /> {label}
+              </button>
+            ) : (
+              <a key={label} href={url.startsWith('mailto:') || url.startsWith('tel:') ? url : href(url)} target="_blank" rel="noreferrer" className={pill}>
+                <Icon className="size-3.5" /> {label}
+              </a>
+            )
+          })}
         </div>
 
         {p.motivo && (
@@ -511,7 +520,66 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
         </section>
       </div>
       {confirmDialog}
+      {viewing && <SiteViewer title={`${viewing.label} · ${p.negocio}`} url={viewing.url} onClose={() => setViewing(null)} />}
     </Modal>
+  )
+}
+
+// Muestra una web a pantalla completa encima de la ficha. Las webs sin HTTPS no se pueden mostrar dentro de una página
+// segura, y algunas (Google Drive, Instagram) se niegan a aparecer dentro de otra: para esos casos está «Abrir en pestaña nueva».
+function SiteViewer({ title, url: original, onClose }: { title: string; url: string; onClose: () => void }) {
+  // Los archivos de Drive (muchas cartas actuales) sí se dejan mostrar en su modo «preview».
+  const url = original.replace(/^(https:\/\/drive\.google\.com\/file\/d\/[^/?#]+)\/view.*$/, '$1/preview')
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  // null mientras se consulta; después: se muestra, no tiene HTTPS o no se deja mostrar dentro de otra página.
+  const [mode, setMode] = useState<'frame' | 'insecure' | 'blocked' | null>(url.startsWith('http://') ? 'insecure' : null)
+  useEffect(() => {
+    if (url.startsWith('http://')) return
+    fetch(`/api/administracion/prospects/frame?url=${encodeURIComponent(url)}`)
+      .then((r) => r.json())
+      .then((d) => setMode(d.finalUrl?.startsWith('http://') ? 'insecure' : d.embeddable === false ? 'blocked' : 'frame'))
+      .catch(() => setMode('frame'))
+  }, [url])
+  // Portal al body: la animación de la ficha deja un transform que encerraría al visor dentro de ella.
+  return createPortal(
+    // data-confirm-dialog: así el Escape cierra solo el visor y no también la ficha de abajo.
+    <div data-confirm-dialog role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[85] flex flex-col bg-white">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-3 sm:px-5">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{title}</p>
+          <p className="truncate text-xs text-muted-ink">{url}</p>
+        </div>
+        <a href={url} target="_blank" rel="noreferrer" className={`${btn.secondary} h-9 shrink-0 px-3`}>
+          <ExternalLink className="size-4" /> <span className="hidden sm:inline">Abrir en pestaña nueva</span>
+        </a>
+        <button type="button" autoFocus aria-label="Cerrar" onClick={onClose} className={`${btn.icon} shrink-0`}>
+          <X className="size-4" />
+        </button>
+      </header>
+      {mode === 'frame' ? (
+        <iframe src={url} title={title} className="w-full flex-1 border-0 bg-white" />
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-paper p-6 text-center">
+          {mode === null ? (
+            <p className="text-sm text-muted-ink">Cargando…</p>
+          ) : (
+            <>
+              <p className="max-w-md text-sm text-muted-ink">
+                {mode === 'insecure'
+                  ? 'Esta web no tiene HTTPS, así que el navegador no deja mostrarla dentro del panel (justamente uno de los motivos para ofrecerle el rediseño).'
+                  : 'Esta página no se deja mostrar dentro de otra web (pasa con Google Sites, Instagram y algunas más).'}
+              </p>
+              <a href={url} target="_blank" rel="noreferrer" className={btn.primary}><ExternalLink className="size-4" /> Abrirla en pestaña nueva</a>
+            </>
+          )}
+        </div>
+      )}
+    </div>,
+    document.body,
   )
 }
 
