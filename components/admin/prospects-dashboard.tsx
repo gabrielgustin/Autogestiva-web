@@ -62,6 +62,15 @@ export function ProspectsDashboard() {
   const [menu, setMenu] = useState<{ id: string; anchor: DOMRect } | null>(null)
   const menuId = menu?.id ?? null
   const board = useRef<HTMLDivElement>(null)
+  const headRow = useRef<HTMLDivElement>(null)
+  // Alto del encabezado del panel (fijo arriba): los títulos de las columnas se pegan justo debajo.
+  const [shellTop, setShellTop] = useState(0)
+  useEffect(() => {
+    const measure = () => setShellTop((document.querySelector('header.sticky') as HTMLElement | null)?.offsetHeight ?? 0)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
   const today = isoIn(0)
 
   const notify = useCallback((message: string, tone: Toast['tone'] = 'ok') => setToast({ message, tone }), [])
@@ -164,13 +173,11 @@ export function ProspectsDashboard() {
         if (d.x < r.left + zone) el.scrollLeft -= speed(r.left + zone - d.x, zone)
         else if (d.x > r.right - zone) el.scrollLeft += speed(d.x - (r.right - zone), zone)
       }
-      const list = document.elementFromPoint(d.x, d.y)?.closest('[data-col]')?.querySelector<HTMLElement>('[data-list]')
-      if (list) {
-        const r = list.getBoundingClientRect()
-        const zone = Math.min(90, r.height / 4)
-        if (d.y < r.top + zone) list.scrollTop -= speed(r.top + zone - d.y, zone)
-        else if (d.y > r.bottom - zone) list.scrollTop += speed(d.y - (r.bottom - zone), zone)
-      }
+      // Vertical: se desplaza la página (debajo de los títulos fijos) cerca del borde superior o inferior.
+      const topEdge = headRow.current?.getBoundingClientRect().bottom ?? 0
+      const zoneY = 90
+      if (d.y < topEdge + zoneY) window.scrollBy(0, -speed(topEdge + zoneY - d.y, zoneY))
+      else if (d.y > window.innerHeight - zoneY) window.scrollBy(0, speed(d.y - (window.innerHeight - zoneY), zoneY))
       setOverCol(colAt(d.x, d.y) ?? null)
       place()
       raf = requestAnimationFrame(tick)
@@ -233,6 +240,10 @@ export function ProspectsDashboard() {
     const trabajados = prospects.length - by.Prospecto - by['Demo lista']
     return { by, enCurso: EN_CURSO.reduce((n, e) => n + by[e], 0), tasa: trabajados ? Math.round((by.Cliente / trabajados) * 100) : 0 }
   }, [prospects])
+  const columns = useMemo(
+    () => ESTADOS.filter((e) => e !== 'Prospecto').map((col) => ({ col, items: prospects.filter((p) => p.estado === col).sort((a, b) => (a.proximoFecha || '9999').localeCompare(b.proximoFecha || '9999')) })),
+    [prospects],
+  )
   const productos = useMemo(() => PRODUCTOS.filter((name) => prospects.some((p) => p.producto === name)), [prospects])
   const banco = useMemo(() => {
     const needle = normalizeText(query.trim())
@@ -307,23 +318,29 @@ export function ProspectsDashboard() {
       {loading ? (
         <div className={`${card} mt-4`}><EmptyState>Cargando prospectos…</EmptyState></div>
       ) : tab === 'embudo' ? (
-        // Alto fijo con scroll dentro de cada columna: los títulos quedan siempre a la vista.
-        <div ref={board} className={`-mx-4 mt-4 flex h-[calc(100dvh-8rem)] min-h-[440px] gap-3 overflow-x-auto overflow-y-hidden px-4 pb-3 md:-mx-8 md:h-[calc(100dvh-6rem)] md:px-8 ${dragging ? 'cursor-grabbing select-none' : 'snap-x'}`}>
-          {ESTADOS.filter((e) => e !== 'Prospecto').map((col) => {
-            const items = prospects.filter((p) => p.estado === col).sort((a, b) => (a.proximoFecha || '9999').localeCompare(b.proximoFecha || '9999'))
+        <>
+        {/* Títulos de las columnas: se pegan arriba al bajar y siguen el desplazamiento horizontal del tablero. */}
+        <div ref={headRow} style={{ top: shellTop }} onWheel={(e) => { if (board.current && e.deltaX) board.current.scrollLeft += e.deltaX }} className="sticky z-20 -mx-4 mt-4 overflow-hidden border-y border-line/70 bg-paper/85 backdrop-blur-md md:-mx-8">
+          <div className="flex w-max gap-3 px-4 py-2 md:px-8">
+            {columns.map(({ col, items }) => (
+              <div key={col} className={`flex w-[280px] shrink-0 items-center justify-between rounded-xl border px-3 py-2 transition-colors ${overCol === col && dragging ? 'border-brand bg-brand-light' : 'border-line bg-white'}`}>
+                <Badge tone={ESTADO_TONE[col]}>{col}</Badge>
+                <span className="rounded-full bg-paper px-2 py-0.5 text-xs font-semibold text-muted-ink">{items.length}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div ref={board} onScroll={() => { if (headRow.current && board.current) headRow.current.scrollLeft = board.current.scrollLeft }} className={`-mx-4 mt-2 flex gap-3 overflow-x-auto px-4 pb-4 md:-mx-8 md:px-8 ${dragging ? 'cursor-grabbing select-none' : 'snap-x'}`}>
+          {columns.map(({ col, items }) => {
             const isOver = overCol === col && dragging && prospects.find((p) => p.id === dragging.id)?.estado !== col
             return (
               <section
                 key={col}
                 aria-label={col}
                 data-col={col}
-                className={`flex h-full w-[280px] shrink-0 snap-start flex-col rounded-2xl border transition-colors duration-150 ${isOver ? 'border-brand bg-brand-light/70 ring-4 ring-brand/15' : 'border-line bg-white/60'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-80' : ''}`}
+                className={`flex w-[280px] shrink-0 snap-start flex-col rounded-2xl border transition-colors duration-150 ${isOver ? 'border-brand bg-brand-light/70 ring-4 ring-brand/15' : 'border-line bg-white/60'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-80' : ''}`}
               >
-                <header className="flex shrink-0 items-center justify-between border-b border-line/70 px-3 py-2.5">
-                  <Badge tone={ESTADO_TONE[col]}>{col}</Badge>
-                  <span className="rounded-full bg-paper px-2 py-0.5 text-xs font-semibold text-muted-ink">{items.length}</span>
-                </header>
-                <div data-list className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
+                <div className="flex min-h-32 flex-1 flex-col gap-2 p-2">
                   {items.map((p) => {
                     const when = p.proximoFecha ? cuando(p.proximoFecha, today) : null
                     return (
@@ -348,6 +365,7 @@ export function ProspectsDashboard() {
             )
           })}
         </div>
+        </>
       ) : (
         <section className={`${card} mt-4 overflow-hidden`}>
           <div className="flex flex-col gap-2 border-b border-line p-3 md:flex-row md:items-center md:p-4">
