@@ -3,15 +3,19 @@
 Vive en este mismo proyecto y se publica en `https://www.autogestiva.com.ar/administracion`.
 Antes era el repo `paneladmin-autogestiva` (dominio aparte).
 
-- **Clientes** (`/administracion/clientes`): alta, edición, orden, búsqueda, exportación a CSV y alertas de vencimientos.
+> Descripción completa del panel y del proyecto: ver `README.md`.
+
+- **Hoy** (`/administracion/hoy`): inicio del panel con la agenda del día y el resumen diario al celular.
+- **Clientes** (`/administracion/clientes`): alta, edición, orden, búsqueda, pendientes, rentabilidad y alertas de vencimientos.
 - **Infraestructura** (`/administracion`): costos, consumo y estado de los proyectos de Neon, con detalle por proyecto (`/administracion/proyectos/[id]`).
+- **Prospectos** (`/administracion/prospectos`): embudo de ventas, ficha con WhatsApp e historial.
 - APIs del panel: `/api/administracion/*`.
 
 ## Variables de entorno (Vercel > Settings > Environment Variables > Production)
 
 | Variable | Para qué |
 | --- | --- |
-| `DATABASE_URL` | Conexión a la base de Neon `autogestiva-neon` (tablas `clients` y `admin_users`). La carga sola la integración de Neon en Vercel |
+| `DATABASE_URL` | Conexión a la base de Neon `autogestiva-neon` (tablas en `db/schema.sql`). La carga sola la integración de Neon en Vercel |
 | `NEON_API_KEY` | API key de Neon para leer costos e infraestructura |
 | `BETTER_AUTH_SECRET` | Opcional. Secreto de sesión; si falta se deriva de `DATABASE_URL` |
 
