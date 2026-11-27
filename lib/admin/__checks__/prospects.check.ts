@@ -1,6 +1,6 @@
 // Autocontrol: npx tsx lib/admin/__checks__/prospects.check.ts
 import assert from 'node:assert/strict'
-import { daysBetween, esPrimerContacto, isoIn, phoneDigits, primerMensaje, toDbRow, waLink } from '../prospects'
+import { datosCliente, daysBetween, esPrimerContacto, isoIn, phoneDigits, primerMensaje, toDbRow, waLink } from '../prospects'
 
 assert.equal(phoneDigits('+54 9 351 342-0260'), '3513420260')
 assert.equal(phoneDigits('+54 351 460-1175'), '3514601175')
@@ -32,4 +32,10 @@ assert.equal(decodeURIComponent(waLink('3517608037', texto).split('?text=')[1]),
 assert.ok(esPrimerContacto({ estado: 'Demo lista', fechaContacto: '' }))
 assert.ok(!esPrimerContacto({ estado: 'Prospecto', fechaContacto: '2026-11-20' }))
 assert.ok(!esPrimerContacto({ estado: 'Contactado', fechaContacto: '' }))
+const alta = { negocio: 'PROIL', contacto: 'Ana María Pérez', producto: 'Rediseño web', email: 'a@proil.com', whatsapp: '3515123456', web: 'http://www.proil.com.ar/inicio' }
+assert.deepEqual(datosCliente(alta), { nombre: 'Ana', apellido: 'María Pérez', empresa: 'PROIL', producto: 'Rediseño web', mail: 'a@proil.com', telefono: '3515123456', dominio: 'proil.com.ar' })
+assert.equal(datosCliente({ ...alta, web: 'https://instagram.com/proil' }).dominio, '')
+assert.equal(datosCliente({ ...alta, web: '@proil' }).dominio, '')
+assert.equal(datosCliente({ ...alta, producto: 'Carta digital', contacto: '' }).dominio, '')
+assert.equal(datosCliente({ ...alta, contacto: '', producto: 'Otro' }).nombre + datosCliente({ ...alta, producto: 'Otro' }).producto, '')
 console.log('prospects ok')

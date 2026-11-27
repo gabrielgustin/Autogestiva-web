@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AlertTriangle, CircleHelp, X } from 'lucide-react'
@@ -113,9 +113,15 @@ export function Badge({ tone = 'gray', children, className = '' }: { tone?: keyo
 
 // Ventana modal: cierra con Escape o tocando afuera, y bloquea el scroll de la página mientras está abierta.
 export function Modal({ title, eyebrow, onClose, children, footer, wide }: { title: React.ReactNode; eyebrow?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
+  const self = useRef<HTMLElement>(null)
   useEffect(() => {
     // Escape con un calendario o una lista abiertos cierra solo ese desplegable, no la ventana.
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper], [data-confirm-dialog]')) onClose() }
+    // Con dos ventanas apiladas cierra solo la de arriba.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[data-radix-popper-content-wrapper], [data-confirm-dialog]')) return
+      const stack = document.querySelectorAll('[data-admin-modal]')
+      if (stack[stack.length - 1] === self.current) onClose()
+    }
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     // En captura: corre antes de que el desplegable se cierre solo; si no, ya no lo encuentra y cierra también la ventana.
@@ -128,7 +134,7 @@ export function Modal({ title, eyebrow, onClose, children, footer, wide }: { tit
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className={`animate-rise-in flex max-h-[92vh] [animation-duration:280ms] w-full ${wide ? 'max-w-6xl' : 'max-w-2xl'} flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] sm:rounded-3xl`}>
+      <section ref={self} data-admin-modal role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className={`animate-rise-in flex max-h-[92vh] [animation-duration:280ms] w-full ${wide ? 'max-w-6xl' : 'max-w-2xl'} flex-col overflow-hidden rounded-t-3xl bg-white shadow-[0_30px_70px_-25px_rgba(11,19,34,0.45)] sm:rounded-3xl`}>
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-7 sm:py-5">
           <div className="min-w-0">
             {eyebrow && <p className="eyebrow text-[10px] text-orange-600">{eyebrow}</p>}
@@ -149,7 +155,7 @@ export function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className="px-6 py-14 text-center text-sm text-muted-ink">{children}</div>
 }
 
-type ConfirmOptions = { title: string; message?: React.ReactNode; confirmLabel?: string; danger?: boolean }
+type ConfirmOptions = { title: string; message?: React.ReactNode; confirmLabel?: string; cancelLabel?: string; danger?: boolean }
 
 // Reemplaza a window.confirm con una ventana del panel: `const [confirm, confirmDialog] = useConfirm()`,
 // `if (!(await confirm({ title: '…' }))) return` y renderizar {confirmDialog} en el componente.
@@ -164,7 +170,7 @@ export function useConfirm() {
   return [confirm, dialog] as const
 }
 
-function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', danger, onAnswer }: ConfirmOptions & { onAnswer: (ok: boolean) => void }) {
+function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', danger, onAnswer }: ConfirmOptions & { onAnswer: (ok: boolean) => void }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onAnswer(false) }
     window.addEventListener('keydown', onKey)
@@ -180,7 +186,7 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', danger, onA
         <h2 id="confirm-title" className="font-display mt-4 text-xl font-bold tracking-tight text-balance">{title}</h2>
         {message && <div className="mt-2 text-sm leading-relaxed text-muted-ink">{message}</div>}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => onAnswer(false)} className={btn.secondary}>Cancelar</button>
+          <button type="button" onClick={() => onAnswer(false)} className={btn.secondary}>{cancelLabel}</button>
           <button type="button" autoFocus onClick={() => onAnswer(true)} className={danger ? `${btn.primary} bg-red-600 hover:bg-red-700 focus-visible:ring-red-500/30` : btn.primary}>{confirmLabel}</button>
         </div>
       </section>

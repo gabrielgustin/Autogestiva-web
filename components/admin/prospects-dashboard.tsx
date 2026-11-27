@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Ban, CalendarClock, Check, ChevronRight, Copy, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, MoreHorizontal, PauseCircle, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, Undo2, UserRound, X } from 'lucide-react'
 import { DateField, SelectField } from '@/components/admin/pickers'
+import { AddClient } from '@/components/admin/add-client'
+import { Agenda, cuando, fmtDay } from '@/components/admin/agenda'
 import { WhatsAppIcon } from '@/components/home/primitives'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, SIN_CONTACTO, daysBetween, esPrimerContacto, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
@@ -27,17 +29,6 @@ const MEDIOS = [
 ]
 
 const href = (url: string) => (/^https?:\/\//i.test(url) ? url : `https://${url.replace(/^@/, 'instagram.com/')}`)
-const fmtDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
-
-// Etiqueta de una fecha de próximo paso respecto de hoy: atrasado en rojo, hoy en naranja.
-function cuando(iso: string, today: string): { text: string; tone: 'red' | 'orange' | 'blue' | 'gray' } {
-  const d = daysBetween(today, iso)
-  if (d < 0) return { text: d === -1 ? 'Ayer' : `Atrasado ${-d} días`, tone: 'red' }
-  if (d === 0) return { text: 'Hoy', tone: 'orange' }
-  if (d === 1) return { text: 'Mañana', tone: 'blue' }
-  return { text: fmtDay(iso), tone: 'gray' }
-}
-
 export function ProspectsDashboard() {
   const router = useRouter()
   const [prospects, setProspects] = useState<Prospect[]>([])
@@ -52,6 +43,8 @@ export function ProspectsDashboard() {
   const [limit, setLimit] = useState(PAGE)
   const [openId, setOpenId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [confirm, confirmDialog] = useConfirm()
+  const [alta, setAlta] = useState<Prospect | null>(null)
   const [dragging, setDragging] = useState<{ id: string; width: number } | null>(null)
   const [overCol, setOverCol] = useState<Estado | null>(null)
   const [menu, setMenu] = useState<{ id: string; anchor: DOMRect } | null>(null)
@@ -93,13 +86,28 @@ export function ProspectsDashboard() {
       .finally(() => setLoading(false))
   }, [api])
 
+  // Al pasar a «Cliente» se pregunta si hay que darlo de alta en el panel de clientes.
+  const ofrecerAlta = useCallback(async (p: Prospect) => {
+    // Si la empresa ya está cargada se avisa, para no duplicarla al ir y volver de columna.
+    const clientes: { empresa: string }[] = await api('/api/administracion/clients').catch(() => [])
+    const yaEsta = clientes.some((c) => normalizeText(c.empresa.trim()) === normalizeText(p.negocio.trim()))
+    const ok = await confirm({
+      title: yaEsta ? `${p.negocio} ya está en Clientes` : `¿Sumar a ${p.negocio} al panel de clientes?`,
+      message: yaEsta ? 'Sumalo de nuevo solo si es un servicio distinto.' : 'Completás sus datos de servicio y cobro y empezás a gestionarlo como cliente.',
+      confirmLabel: yaEsta ? 'Sumar otro servicio' : 'Sí, sumarlo',
+      cancelLabel: 'Ahora no',
+    })
+    if (ok) setAlta(p)
+  }, [api, confirm])
+
   const save = useCallback(async (id: string, patch: Patch, evento?: Evento) => {
     // Volver a «Por contactar» lo saca de la agenda: ya no hay un paso pendiente.
     const cambios = patch.estado === 'Prospecto' ? { ...patch, proximoPaso: '', proximoFecha: '' } : patch
     const updated: Prospect = await api('/api/administracion/prospects', { method: 'PUT', body: JSON.stringify({ id, ...cambios, evento }) })
     setProspects((list) => list.map((p) => (p.id === id ? updated : p)))
+    if (patch.estado === 'Cliente') void ofrecerAlta(updated)
     return updated
-  }, [api])
+  }, [api, ofrecerAlta])
 
   async function move(id: string, to: Estado) {
     const current = prospects.find((p) => p.id === id)
@@ -271,36 +279,20 @@ export function ProspectsDashboard() {
         <Stat label="Clientes ganados" value={loading ? '…' : counts.by.Cliente} detail={`${counts.tasa}% de los contactados`} icon={<Trophy />} />
       </div>
 
-      {agenda.length > 0 && (
-        <section className={`${card} mt-6 overflow-hidden`} aria-labelledby="agenda-title">
-          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-5">
-            <h2 id="agenda-title" className="font-display text-lg font-bold tracking-tight">Agenda de hoy</h2>
-            <span className="text-xs text-muted-ink">{fmtDay(today)}</span>
-          </div>
-          <ul className="divide-y divide-line">
-            {agenda.map((p) => {
-              const when = cuando(p.proximoFecha, today)
-              return (
-                <li key={p.id} className="flex items-center">
-                  <button type="button" onClick={() => setOpenId(p.id)} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left transition-colors hover:bg-paper md:pl-5">
-                    <Badge tone={when.tone} className="w-[92px] justify-center">{when.text}</Badge>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{p.negocio}</span>
-                      <span className="block truncate text-xs text-muted-ink">{p.proximoPaso || 'Seguimiento'} · {p.estado}</span>
-                    </span>
-                    {waLink(p.whatsapp) && <MessageCircle className="size-4 shrink-0 text-emerald-600" aria-label="Tiene WhatsApp" />}
-                    <ChevronRight className="size-4 shrink-0 text-ink/30" />
-                  </button>
-                  {/* Hecho: el paso se cumplió, queda en el historial y sale de la agenda. */}
-                  <button type="button" onClick={() => quick(p.id, { proximoPaso: '', proximoFecha: '' }, { tipo: 'Hecho', texto: p.proximoPaso || 'Seguimiento' }, `${p.negocio}: hecho, salió de la agenda`)} className="mx-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:mx-5">
-                    <Check className="size-4" /> Hecho
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
+      <Agenda
+        className="mt-6"
+        today={today}
+        items={agenda.map((p) => ({
+          key: p.id,
+          fecha: p.proximoFecha,
+          titulo: p.negocio,
+          detalle: `${p.proximoPaso || 'Seguimiento'} · ${p.estado}`,
+          whatsapp: !!waLink(p.whatsapp),
+          onOpen: () => setOpenId(p.id),
+          // Hecho: el paso se cumplió, queda en el historial y sale de la agenda.
+          onDone: () => quick(p.id, { proximoPaso: '', proximoFecha: '' }, { tipo: 'Hecho', texto: p.proximoPaso || 'Seguimiento' }, `${p.negocio}: hecho, salió de la agenda`),
+        }))}
+      />
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         <div role="tablist" aria-label="Vista" className="flex gap-1 rounded-full border border-line bg-white p-1">
@@ -424,6 +416,18 @@ export function ProspectsDashboard() {
 
       {open && <ProspectSheet key={open.id} prospect={open} api={api} save={save} notify={notify} today={today} onClose={() => setOpenId(null)} onDeleted={(id) => { setProspects((list) => list.filter((p) => p.id !== id)); setOpenId(null) }} />}
       {creating && <NewProspect api={api} onClose={() => setCreating(false)} onCreated={(p) => { setProspects((list) => [p, ...list]); setCreating(false); setOpenId(p.id); notify('Prospecto cargado') }} />}
+      {alta && (
+        <AddClient
+          prospect={alta}
+          api={api}
+          onClose={() => setAlta(null)}
+          onCreated={() => {
+            setAlta(null)
+            void quick(alta.id, {}, { tipo: 'Cliente', texto: 'Sumado al panel de clientes' }, `${alta.negocio} ya está en Clientes`)
+          }}
+        />
+      )}
+      {confirmDialog}
 
       {dragging && createPortal(
         <div data-col="Prospecto" className={`fixed inset-x-4 bottom-4 z-[60] mx-auto flex h-16 max-w-md items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-sm font-semibold shadow-[0_20px_50px_-20px_rgba(11,19,34,0.5)] transition-colors ${overCol === 'Prospecto' ? 'border-brand bg-brand text-white' : 'border-ink/25 bg-white text-ink/70'}`}>
@@ -467,8 +471,9 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   const [form, setForm] = useState<Patch>(p)
   const [medio, setMedio] = useState('WhatsApp')
   const [nota, setNota] = useState('')
-  const [paso, setPaso] = useState(p.proximoPaso || 'Recontactar')
-  const [fecha, setFecha] = useState(p.proximoFecha)
+  // El próximo paso arranca vacío: lo completa Gabriel en cada contacto.
+  const [paso, setPaso] = useState('')
+  const [fecha, setFecha] = useState('')
   const [busy, setBusy] = useState(false)
   const [viewing, setViewing] = useState<{ label: string; url: string } | null>(null)
 
@@ -493,8 +498,9 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   }
 
   // Registrar un contacto: si todavía no se le había hablado pasa a «Contactado» y queda agendado el próximo paso.
-  function registrar(tipo: string, texto: string, proximo = { paso, fecha }) {
-    const patch: Patch = { proximoPaso: proximo.fecha ? proximo.paso.trim() || 'Recontactar' : proximo.paso.trim(), proximoFecha: proximo.fecha }
+  function registrar(tipo: string, texto: string) {
+    // Sin completar nada, lo ya agendado queda como estaba.
+    const patch: Patch = paso.trim() || fecha ? { proximoPaso: paso.trim(), proximoFecha: fecha } : {}
     if (tipo !== 'Nota') {
       patch.fechaContacto = today
       if (SIN_CONTACTO.includes(p.estado)) patch.estado = 'Contactado'
@@ -505,6 +511,8 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   async function guardarContacto() {
     if (!(await registrar(medio, nota.trim() || (medio === 'Nota' ? '' : `Contacto por ${medio.toLowerCase()}`)))) return
     setNota('')
+    setPaso('')
+    setFecha('')
     // Con datos del negocio sin guardar la ficha queda abierta: cerrarla los perdería.
     if (changed.length) notify('Contacto registrado · falta guardar los datos del negocio')
     else onClose()
@@ -602,6 +610,18 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
 
         </div>
         <div className="flex flex-col gap-6">
+        {(p.proximoPaso || p.proximoFecha) && (
+          <div className="flex gap-3 rounded-2xl bg-brand-light p-4 text-sm text-ink ring-1 ring-inset ring-brand/20">
+            <CalendarClock className="mt-0.5 size-4 shrink-0 text-brand" />
+            <div className="min-w-0">
+              <p className="font-semibold">
+                {p.proximoFecha ? `Agendado para el ${fmtDay(p.proximoFecha)}` : 'Próximo paso sin fecha'}
+                {p.proximoFecha && daysBetween(today, p.proximoFecha) <= 1 && ` · ${cuando(p.proximoFecha, today).text}`}
+              </p>
+              <p className="mt-1 break-words leading-relaxed">{p.proximoPaso || 'Seguimiento (sin detalle escrito)'}</p>
+            </div>
+          </div>
+        )}
         {p.motivo && (
           <div className="flex gap-3 rounded-2xl bg-orange-50 p-4 text-sm text-orange-900 ring-1 ring-inset ring-orange-200">
             <Sparkles className="mt-0.5 size-4 shrink-0 text-orange-600" />

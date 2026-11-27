@@ -1,9 +1,10 @@
-export const COLUMNS = ['nombre', 'apellido', 'empresa', 'producto', 'dominio', 'dominioVencimiento', 'mail', 'telefono', 'servidor', 'baseDatos', 'plan', 'metodoPago', 'ultimoPago', 'proximoPago', 'avisoSuscripcion'] as const
+export const COLUMNS = ['nombre', 'apellido', 'empresa', 'producto', 'dominio', 'dominioVencimiento', 'mail', 'telefono', 'servidor', 'baseDatos', 'plan', 'metodoPago', 'ultimoPago', 'proximoPago', 'avisoSuscripcion', 'valorVenta'] as const
 
 export type ClientColumn = (typeof COLUMNS)[number]
 export type ClientInput = Record<ClientColumn, string>
 // `row` es el id (uuid) del cliente en la base.
 export type SheetClient = ClientInput & { row: string }
+export type ClientTask = { id: string; clientId: string; texto: string; fecha: string }
 
 export const COLUMN_LABELS: Record<ClientColumn, string> = {
   nombre: 'Nombre',
@@ -21,6 +22,7 @@ export const COLUMN_LABELS: Record<ClientColumn, string> = {
   ultimoPago: 'Último pago',
   proximoPago: 'Próximo pago',
   avisoSuscripcion: 'Aviso para enviar el link de suscripción',
+  valorVenta: 'Valor de venta',
 }
 
 export function fingerprint(values: ClientInput) {

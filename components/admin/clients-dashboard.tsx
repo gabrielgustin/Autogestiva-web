@@ -1,29 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarClock, Check, ChevronDown, ChevronUp, CircleDollarSign, Layers, Mail, MessageCircle, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react'
+import { Bell, CalendarClock, Check, ChevronDown, CircleDollarSign, GripVertical, Layers, Mail, MessageCircle, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react'
 import { buildClientAlerts, describeDays, type ClientAlert } from '@/lib/admin/client-alerts'
-import { COLUMN_LABELS, fingerprint, type ClientInput, type SheetClient } from '@/lib/admin/clients-shared'
-import { chargesPeriodically, currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
+import { COLUMN_LABELS, fingerprint, type ClientInput, type ClientTask, type SheetClient } from '@/lib/admin/clients-shared'
+import { currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/payments'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
-
-const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '', avisoSuscripcion: '' }
-const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual', 'Ninguno']
-const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
-const CUSTOM_PLAN = '__personalizado'
-const isCustomPlan = (plan: string) => !!plan && !planOptions.includes(plan)
-// Lo que se escribe en "Monto personalizado" se guarda con el mismo formato que los planes fijos: $12.500.
-const formatPlan = (digits: string) => (digits ? `$${Number(digits).toLocaleString('es-AR')}` : '')
-
-// Secciones de la ficha: qué campos van juntos y cuáles son obligatorios.
-const formSections: { title: string; fields: (keyof ClientInput)[] }[] = [
-  { title: 'Contacto', fields: ['nombre', 'apellido', 'empresa', 'mail', 'telefono'] },
-  { title: 'Servicio', fields: ['producto', 'dominio', 'dominioVencimiento', 'servidor', 'baseDatos'] },
-  { title: 'Cobro', fields: ['plan', 'metodoPago', 'ultimoPago'] },
-]
-const requiredFields = new Set<keyof ClientInput>(['nombre', 'apellido', 'plan'])
+import { reorder } from '@/lib/admin/reorder'
+import { Agenda, cuando } from '@/components/admin/agenda'
+import { ClientTasks } from '@/components/admin/client-tasks'
+import { useDragSort } from '@/components/admin/use-drag-sort'
+import { ClientFields, MoneyInput, emptyForm, isCustomPlan, missingFields } from '@/components/admin/client-form'
 
 // Fecha de hoy en hora local (AAAA-MM-DD); toISOString daría el día UTC.
 const todayIso = () => new Date().toLocaleDateString('sv-SE')
@@ -69,8 +58,27 @@ function buildEntries(list: SheetClient[]): ClientEntry[] {
     entry.members.push(client)
     for (const key of keys) byKey.set(key, entry)
   }
+  // La clave no depende del orden: reordenar los servicios no debe cerrar el grupo.
+  for (const entry of entries) entry.key = entry.members.map((member) => member.row).sort()[0]
   return entries
 }
+
+// Orden nuevo al poner una fila antes o después de otra. En 'root' se mueve el cliente entero; si no, un servicio dentro del suyo.
+function arrange(list: SheetClient[], scope: string, row: string, target: string, after: boolean) {
+  const entries = buildEntries(list)
+  const entryOf = (id: string) => entries.find((entry) => entry.members.some((member) => member.row === id))
+  const entry = entryOf(row)
+  if (!entry) return list
+  if (scope === 'root') {
+    const next = reorder(entries, (item) => item.key, entry.key, entryOf(target)?.key ?? '', after)
+    return next === entries ? list : next.flatMap((item) => item.members)
+  }
+  const members = reorder(entry.members, (member) => member.row, row, target, after)
+  return members === entry.members ? list : entries.flatMap((item) => (item === entry ? members : item.members))
+}
+
+// Pendiente más próximo entre los servicios dados (la lista ya viene ordenada por fecha).
+const nextTask = (tasks: ClientTask[], rows: string[]) => tasks.find((task) => rows.includes(task.clientId))
 
 const planAmount = (plan: string) => Number.parseInt(plan.replace(/[^0-9]/g, ''), 10) || 0
 const money = (value: number) => `$${value.toLocaleString('es-AR')}`
@@ -103,6 +111,7 @@ export function ClientsDashboard() {
   const [mpSubs, setMpSubs] = useState<Set<string> | null>(null)
   const [showAllAlerts, setShowAllAlerts] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [tasks, setTasks] = useState<ClientTask[]>([])
 
   const notify = useCallback((message: string, tone: Toast['tone'] = 'ok') => setToast({ message, tone }), [])
   useEffect(() => {
@@ -127,6 +136,14 @@ export function ClientsDashboard() {
     }
   }, [router])
 
+  const tasksApi = useCallback(async (method: 'GET' | 'POST' | 'PUT', body?: unknown) => {
+    const response = await fetch('/api/administracion/clients/tasks', { method, cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    if (response.status === 401) { router.replace('/administracion/login'); throw new Error('La sesión expiró') }
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error ?? 'No se pudo guardar')
+    return result
+  }, [router])
+
   const loadMercadoPago = useCallback(() => {
     // Pagos confirmados por Mercado Pago; si falla, los avisos quedan como estaban.
     fetch('/api/administracion/mercadopago', { cache: 'no-store' })
@@ -138,7 +155,8 @@ export function ClientsDashboard() {
   useEffect(() => {
     load()
     loadMercadoPago()
-  }, [load, loadMercadoPago])
+    tasksApi('GET').then(setTasks).catch((e) => notify(e.message, 'error'))
+  }, [load, loadMercadoPago, tasksApi, notify])
 
 
   const plans = useMemo(() => [...new Set(clients.map((client) => clean(client.plan)).filter(Boolean))].sort((a, b) => planAmount(a) - planAmount(b)), [clients])
@@ -201,15 +219,6 @@ export function ClientsDashboard() {
   const closeForm = useCallback(() => { setEditing(null); setIsFormOpen(false) }, [])
   const closeDetails = useCallback(() => setSelectedClient(null), [])
 
-  function update(field: keyof ClientInput, value: string) {
-    setForm((current) => {
-      const next = { ...current, [field]: value }
-      // Se sugiere el próximo pago con el método y el último pago, pero se puede fijar a mano (cliente que empieza a pagar más adelante).
-      if (field === 'metodoPago' || field === 'ultimoPago') next.proximoPago = nextPaymentDate(next.metodoPago, next.ultimoPago) || (chargesPeriodically(next.metodoPago) ? next.proximoPago : '')
-      return next
-    })
-  }
-
   async function send(method: 'POST' | 'PUT' | 'DELETE' | 'PATCH', body: unknown) {
     const response = await fetch('/api/administracion/clients', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (response.status === 401) { router.replace('/administracion/login'); throw new Error('La sesión expiró') }
@@ -223,7 +232,7 @@ export function ClientsDashboard() {
   async function save(event: React.FormEvent) {
     event.preventDefault()
     // Los selectores propios no usan la validación nativa: se revisan acá los obligatorios.
-    const missing = [...requiredFields].filter((field) => !form[field].trim()).map((field) => COLUMN_LABELS[field])
+    const missing = missingFields(form)
     if (missing.length) return setFormError(`Completá: ${missing.join(', ')}.`)
     setSaving(true)
     setFormError('')
@@ -239,20 +248,23 @@ export function ClientsDashboard() {
     }
   }
 
-  // Aviso para mandarle el link de suscripción en una fecha puntual ('' lo quita).
-  async function setReminder(client: SheetClient, date: string) {
+  // Guarda un dato suelto desde el detalle, sin abrir el formulario.
+  async function patchClient(client: SheetClient, patch: Partial<ClientInput>, ok: string) {
     setBusyRow(client.row)
     try {
-      const saved = await send('PUT', { ...toInput(client), avisoSuscripcion: date, row: client.row, expected: fingerprint(toInput(client)) })
-      notify(date ? `Aviso guardado para el ${formatDate(date)}` : 'Aviso quitado')
-      setSelectedClient((current) => (current?.row === client.row ? { ...current, avisoSuscripcion: saved.avisoSuscripcion ?? '' } : current))
+      const saved = await send('PUT', { ...toInput(client), ...patch, row: client.row, expected: fingerprint(toInput(client)) })
+      notify(ok)
+      setSelectedClient((current) => (current?.row === client.row ? { ...current, ...saved } : current))
       await load()
     } catch (e) {
-      notify(e instanceof Error ? e.message : 'No se pudo guardar el aviso', 'error')
+      notify(e instanceof Error ? e.message : 'No se pudo guardar', 'error')
     } finally {
       setBusyRow(null)
     }
   }
+
+  // Aviso para mandarle el link de suscripción en una fecha puntual ('' lo quita).
+  const setReminder = (client: SheetClient, date: string) => patchClient(client, { avisoSuscripcion: date }, date ? `Aviso guardado para el ${formatDate(date)}` : 'Aviso quitado')
 
   async function markPaid(client: SheetClient) {
     const today = todayIso()
@@ -283,8 +295,7 @@ export function ClientsDashboard() {
     }
   }
 
-  async function persistOrder(reordered: SheetClient[]) {
-    const previous = clients
+  async function persistOrder(reordered: SheetClient[], previous: SheetClient[]) {
     setClients(reordered)
     try {
       await send('PATCH', { ids: reordered.map((item) => item.row) })
@@ -294,27 +305,56 @@ export function ClientsDashboard() {
     }
   }
 
-  async function moveEntry(key: string, direction: -1 | 1) {
-    const visibleIndex = visibleEntries.findIndex((entry) => entry.key === key)
-    const target = visibleEntries[visibleIndex + direction]
-    if (visibleIndex < 0 || !target) return
-    const entries = buildEntries(clients)
-    const from = entries.findIndex((entry) => entry.key === key)
-    const to = entries.findIndex((entry) => entry.key === target.key)
-    if (from < 0 || to < 0) return
-    ;[entries[from], entries[to]] = [entries[to], entries[from]]
-    await persistOrder(entries.flatMap((entry) => entry.members))
+  // Orden antes y durante el arrastre: la lista se acomoda en vivo y se guarda recién al soltar.
+  const order = useRef({ before: clients, now: clients })
+  const sort = useDragSort({
+    onStart: () => { order.current = { before: clients, now: clients } },
+    onMove: (scope, row, target, after) => {
+      const next = arrange(order.current.now, scope, row, target, after)
+      if (next === order.current.now) return
+      order.current.now = next
+      setClients(next)
+    },
+    onDrop: () => { if (order.current.now !== order.current.before) persistOrder(order.current.now, order.current.before) },
+    onCancel: () => setClients(order.current.before),
+  })
+
+  // Lo mismo con el teclado: flechas arriba y abajo sobre la manija.
+  function nudge(scope: string, rows: string[], row: string, direction: -1 | 1) {
+    const target = rows[rows.indexOf(row) + direction]
+    if (!target) return
+    const next = arrange(clients, scope, row, target, direction > 0)
+    if (next !== clients) persistOrder(next, clients)
   }
 
-  async function moveWithinGroup(entry: ClientEntry, client: SheetClient, direction: -1 | 1) {
-    const sibling = entry.members[entry.members.findIndex((member) => member.row === client.row) + direction]
-    if (!sibling) return
-    const reordered = [...clients]
-    const from = reordered.findIndex((item) => item.row === client.row)
-    const to = reordered.findIndex((item) => item.row === sibling.row)
-    if (from < 0 || to < 0) return
-    ;[reordered[from], reordered[to]] = [reordered[to], reordered[from]]
-    await persistOrder(reordered)
+  const sortProps = (scope: string, rows: string[], row: string): SortProps => ({
+    scope,
+    sortKey: row,
+    placeholder: sort.dragging?.scope === scope && sort.dragging.key === row,
+    onPointerDown: sort.start,
+    onNudge: (direction) => nudge(scope, rows, row, direction),
+  })
+
+  async function addTask(client: SheetClient, texto: string, fecha: string) {
+    try {
+      const task: ClientTask = await tasksApi('POST', { clientId: client.row, texto, fecha })
+      setTasks((list) => [...list, task].sort((a, b) => a.fecha.localeCompare(b.fecha)))
+      notify(`Agendado para el ${formatDate(fecha)}`)
+      return true
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo agendar', 'error')
+      return false
+    }
+  }
+
+  async function doneTask(task: ClientTask) {
+    try {
+      await tasksApi('PUT', { id: task.id })
+      setTasks((list) => list.filter((item) => item.id !== task.id))
+      notify('Hecho, salió de la agenda')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo guardar', 'error')
+    }
   }
 
   async function remove(client: SheetClient) {
@@ -344,7 +384,9 @@ export function ClientsDashboard() {
     busy: busyRow === client.row,
     unsubscribed: needsSubscription(client),
     paidByMp: mpPaidFor(client),
-    onOpen: () => setSelectedClient(client),
+    task: nextTask(tasks, [client.row]),
+    today: todayIso(),
+    onOpen: () => { if (!sort.moved.current) setSelectedClient(client) },
     onEdit: () => openEdit(client),
     onDelete: () => remove(client),
   })
@@ -376,6 +418,24 @@ export function ClientsDashboard() {
           icon={<CalendarClock />}
         />
       </section>
+
+      <Agenda
+        className="mb-6"
+        today={todayIso()}
+        items={tasks.flatMap((task) => {
+          const client = clientByRow.get(task.clientId)
+          if (!client || task.fecha > todayIso()) return []
+          return [{
+            key: task.id,
+            fecha: task.fecha,
+            titulo: clean(client.empresa) || `${client.nombre} ${client.apellido}`,
+            detalle: [task.texto, clean(client.producto)].filter(Boolean).join(' · '),
+            whatsapp: !!clean(client.telefono),
+            onOpen: () => setSelectedClient(client),
+            onDone: () => doneTask(task),
+          }]
+        })}
+      />
 
       {!firstLoad && (alerts.length > 0 || mpSubs) && (
         <section aria-label="Para atender" className={`${card} mb-6 overflow-hidden`}>
@@ -449,21 +509,14 @@ export function ClientsDashboard() {
               )}
             </EmptyState>
           ) : (
-            visibleEntries.map((entry, entryIndex) => {
-              const order = { canMoveUp: entryIndex > 0, canMoveDown: entryIndex < visibleEntries.length - 1, onMoveUp: () => moveEntry(entry.key, -1), onMoveDown: () => moveEntry(entry.key, 1) }
-              if (entry.members.length === 1) return <ClientRow key={entry.key} {...rowProps(entry.members[0])} {...order} />
+            visibleEntries.map((entry) => {
+              const root = sortProps('root', visibleEntries.map((item) => item.members[0].row), entry.members[0].row)
+              if (entry.members.length === 1) return <ClientRow key={entry.key} {...rowProps(entry.members[0])} sort={root} />
+              const memberRows = entry.members.map((member) => member.row)
               return (
-                <GroupRow key={entry.key} entry={entry} unsubscribed={entry.members.some(needsSubscription)} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => toggleGroup(entry.key)} onAddService={() => openNew(entry.members[0])} {...order}>
-                  {entry.members.map((client, memberIndex) => (
-                    <ClientRow
-                      key={client.row}
-                      {...rowProps(client)}
-                      nested
-                      canMoveUp={memberIndex > 0}
-                      canMoveDown={memberIndex < entry.members.length - 1}
-                      onMoveUp={() => moveWithinGroup(entry, client, -1)}
-                      onMoveDown={() => moveWithinGroup(entry, client, 1)}
-                    />
+                <GroupRow key={entry.key} entry={entry} sort={root} task={nextTask(tasks, memberRows)} today={todayIso()} unsubscribed={entry.members.some(needsSubscription)} expanded={isFiltering || expandedGroups.has(entry.key)} onToggle={() => { if (!sort.moved.current) toggleGroup(entry.key) }} onAddService={() => openNew(entry.members[0])}>
+                  {entry.members.map((client) => (
+                    <ClientRow key={client.row} {...rowProps(client)} nested sort={sortProps(`grupo:${entry.key}`, memberRows, client.row)} />
                   ))}
                 </GroupRow>
               )
@@ -489,6 +542,8 @@ export function ClientsDashboard() {
           onPaid={() => markPaid(selectedClient)}
           onReminder={(date) => setReminder(selectedClient, date)}
           onDelete={() => remove(selectedClient)}
+          onSaleValue={(valorVenta) => patchClient(selectedClient, { valorVenta }, valorVenta ? `Valor de venta guardado: ${valorVenta}` : 'Valor de venta quitado')}
+          tasks={<ClientTasks key={selectedClient.row} tasks={tasks.filter((task) => task.clientId === selectedClient.row)} today={todayIso()} onAdd={(texto, fecha) => addTask(selectedClient, texto, fecha)} onDone={doneTask} />}
         />
       )}
 
@@ -505,71 +560,7 @@ export function ClientsDashboard() {
           }
         >
           <form id="client-form" onSubmit={save} className="space-y-6">
-            {formSections.map((section) => (
-              <fieldset key={section.title}>
-                <legend className="eyebrow mb-3 text-[10px] text-muted-ink">{section.title}</legend>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {section.fields.map((field) => (
-                    <div key={field} className="text-xs font-semibold text-ink/70">
-                      {field === 'ultimoPago' ? 'Fecha del último pago' : COLUMN_LABELS[field]}
-                      {requiredFields.has(field) && <span className="text-orange-600"> *</span>}
-                      <div className="mt-1.5">
-                        {field === 'plan' ? (
-                          <div className="grid gap-2">
-                            <SelectField
-                              ariaLabel="Plan"
-                              placeholder="Elegí un plan"
-                              value={customPlan ? CUSTOM_PLAN : form.plan}
-                              onChange={(value) => {
-                                const custom = value === CUSTOM_PLAN
-                                setCustomPlan(custom)
-                                update('plan', custom ? (isCustomPlan(form.plan) ? form.plan : '') : value)
-                              }}
-                              options={[...planOptions, { value: CUSTOM_PLAN, label: 'Monto personalizado…' }]}
-                            />
-                            {customPlan && (
-                              <div className="relative">
-                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink/50">$</span>
-                                <input
-                                  aria-label="Monto personalizado del plan"
-                                  inputMode="numeric"
-                                  autoFocus
-                                  placeholder="Ej.: 12.500"
-                                  value={form.plan.replace(/[^0-9]/g, '') ? Number(form.plan.replace(/[^0-9]/g, '')).toLocaleString('es-AR') : ''}
-                                  onChange={(e) => update('plan', formatPlan(e.target.value.replace(/[^0-9]/g, '').slice(0, 9)))}
-                                  className={`${inputClass} pl-7`}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        ) : field === 'metodoPago' ? (
-                          <SelectField ariaLabel="Método de pago" placeholder="Elegí un método" value={form.metodoPago} onChange={(value) => update('metodoPago', value)} options={[...new Set([...paymentOptions, ...(form.metodoPago ? [form.metodoPago] : [])])]} />
-                        ) : field === 'dominioVencimiento' || field === 'ultimoPago' ? (
-                          <DateField ariaLabel={field === 'ultimoPago' ? 'Fecha del último pago' : 'Vencimiento del dominio'} value={form[field]} onChange={(value) => update(field, value)} />
-                        ) : (
-                          <input
-                            aria-label={COLUMN_LABELS[field]}
-                            type={field === 'mail' ? 'email' : field === 'telefono' ? 'tel' : 'text'}
-                            autoComplete="off"
-                            value={form[field]}
-                            onChange={(e) => update(field, e.target.value)}
-                            className={inputClass}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {section.title === 'Cobro' && (
-                    <div className="text-xs font-semibold text-ink/70">
-                      Fecha del próximo pago
-                      <div className="mt-1.5 font-normal">
-                        <DateField ariaLabel="Fecha del próximo pago" placeholder="Se calcula con el último pago, o elegí una" value={form.proximoPago} onChange={(value) => update('proximoPago', value)} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </fieldset>
-            ))}
+            <ClientFields form={form} setForm={setForm} customPlan={customPlan} setCustomPlan={setCustomPlan} />
             {formError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
           </form>
         </Modal>
@@ -632,39 +623,59 @@ function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onR
 
 const rowGrid = 'md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.45fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_7.5rem] md:items-center md:gap-4'
 
-function OrderButtons({ label, canMoveUp, canMoveDown, onMoveUp, onMoveDown }: { label: string; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void }) {
+type SortProps = { scope: string; sortKey: string; placeholder: boolean; onPointerDown: (e: React.PointerEvent<HTMLElement>) => void; onNudge: (direction: -1 | 1) => void }
+
+function DragHandle({ label, onNudge }: { label: string; onNudge: (direction: -1 | 1) => void }) {
   return (
-    <div className="flex flex-col">
-      <button type="button" aria-label={`Subir ${label}`} disabled={!canMoveUp} onClick={onMoveUp} className="rounded p-0.5 text-ink/40 hover:bg-paper hover:text-ink disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
-      <button type="button" aria-label={`Bajar ${label}`} disabled={!canMoveDown} onClick={onMoveDown} className="rounded p-0.5 text-ink/40 hover:bg-paper hover:text-ink disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
-    </div>
+    <button
+      type="button"
+      data-drag-handle
+      aria-label={`Mover ${label}: arrastrar, o flechas arriba y abajo`}
+      title="Arrastrá para ordenar"
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+        event.preventDefault()
+        onNudge(event.key === 'ArrowUp' ? -1 : 1)
+      }}
+      className="inline-flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-ink/30 transition-colors hover:bg-paper hover:text-ink"
+    >
+      <GripVertical className="size-4" aria-hidden="true" />
+    </button>
   )
+}
+
+function TaskBadge({ task, today }: { task?: ClientTask; today: string }) {
+  if (!task) return null
+  const when = cuando(task.fecha, today)
+  return <Badge tone={when.tone}><CalendarClock className="size-3" aria-hidden="true" />{when.text} · <span className="max-w-32 truncate">{task.texto}</span></Badge>
 }
 
 type RowProps = {
   client: SheetClient
+  sort: SortProps
+  task?: ClientTask
+  today: string
   busy: boolean
   unsubscribed: boolean
   paidByMp: string
   nested?: boolean
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onMoveUp: () => void
-  onMoveDown: () => void
   onOpen: () => void
   onEdit: () => void
   onDelete: () => void
 }
 
-function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onOpen, onEdit, onDelete }: RowProps) {
+function ClientRow({ client, busy, unsubscribed, paidByMp, nested, sort, task, today, onOpen, onEdit, onDelete }: RowProps) {
   const name = `${client.nombre} ${client.apellido}`
   return (
     <div
       role="button"
       tabIndex={0}
+      data-sort-scope={sort.scope}
+      data-sort-key={sort.sortKey}
+      onPointerDown={sort.onPointerDown}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpen() } }}
-      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${nested ? 'bg-white/70 pl-6 md:pl-9' : ''} ${busy ? 'opacity-60' : ''} ${rowGrid}`}
+      className={`relative cursor-pointer select-none px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${nested ? 'bg-white/70 pl-6 md:pl-9' : ''} ${busy ? 'opacity-60' : ''} ${sort.placeholder ? 'opacity-30' : ''} ${rowGrid}`}
     >
       <div className="min-w-0 pr-28 md:pr-0">
         <div className="truncate font-semibold">{name}</div>
@@ -675,6 +686,7 @@ function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, ca
           {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
           {unsubscribed && client.avisoSuscripcion && <Badge tone="blue"><Bell className="size-3" aria-hidden="true" />Aviso {formatDate(client.avisoSuscripcion)}</Badge>}
           {paidByMp && <Badge tone="green">MP al día</Badge>}
+          <TaskBadge task={task} today={today} />
         </div>
       </div>
 
@@ -691,7 +703,7 @@ function ClientRow({ client, busy, unsubscribed, paidByMp, nested, canMoveUp, ca
       </div>
 
       <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
-        <OrderButtons label={name} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+        <DragHandle label={name} onNudge={sort.onNudge} />
         <button type="button" onClick={onEdit} className={btn.icon} aria-label={`Editar a ${name}`}><Pencil className="size-3.5" /></button>
         <button type="button" onClick={onDelete} disabled={busy} className={btn.danger} aria-label={`Eliminar a ${name}`}><Trash2 className="size-3.5" /></button>
       </div>
@@ -709,7 +721,7 @@ function Cell({ label, children, extra, strong, className = '' }: { label: strin
   )
 }
 
-function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onToggle, onAddService, onMoveUp, onMoveDown, children }: { entry: ClientEntry; unsubscribed: boolean; expanded: boolean; canMoveUp: boolean; canMoveDown: boolean; onToggle: () => void; onAddService: () => void; onMoveUp: () => void; onMoveDown: () => void; children: React.ReactNode }) {
+function GroupRow({ entry, sort, task, today, unsubscribed, expanded, onToggle, onAddService, children }: { entry: ClientEntry; sort: SortProps; task?: ClientTask; today: string; unsubscribed: boolean; expanded: boolean; onToggle: () => void; onAddService: () => void; children: React.ReactNode }) {
   const { members } = entry
   const names = [...new Set(members.map((member) => `${member.nombre} ${member.apellido}`))]
   const products = [...new Set(members.map((member) => clean(member.producto)).filter(Boolean))]
@@ -717,15 +729,16 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   const company = [...new Set(members.map((member) => clean(member.empresa)).filter(Boolean))].join(' · ')
   // Los clientes con varios servicios se distinguen: franja azul a la izquierda y fondo celeste (más intenso abierto).
   return (
-    <div className={`relative transition-colors ${expanded ? 'bg-brand-light/60' : 'bg-brand-light/25'}`}>
+    <div data-sort-scope={sort.scope} data-sort-key={sort.sortKey} className={`relative transition-colors ${expanded ? 'bg-brand-light/60' : 'bg-brand-light/25'} ${sort.placeholder ? 'opacity-30' : ''}`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 z-10 bg-brand transition-all ${expanded ? 'w-1.5' : 'w-1'}`} />
       <div
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
+        onPointerDown={sort.onPointerDown}
         onClick={onToggle}
         onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onToggle() } }}
-        className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${rowGrid}`}
+        className={`relative cursor-pointer select-none px-4 py-3 transition-colors hover:bg-paper/70 focus:outline-none focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40 md:px-5 md:py-3.5 ${rowGrid}`}
       >
         <div className="min-w-0 pr-28 md:pr-0">
           <div className="truncate font-semibold" title={names.join(', ')}>{names.join(', ')}</div>
@@ -735,6 +748,7 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
               {members.length} servicios
             </Badge>
             {unsubscribed && <Badge tone="amber">Falta suscribir</Badge>}
+            <TaskBadge task={task} today={today} />
           </div>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-x-3 md:contents">
@@ -744,7 +758,7 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
           <Cell label="Plan total" strong>{totalPlan ? money(totalPlan) : '—'}</Cell>
         </div>
         <div className="absolute right-3 top-3 flex items-center gap-1 md:static md:justify-end" onClick={(event) => event.stopPropagation()}>
-          <OrderButtons label={company} canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+          <DragHandle label={company} onNudge={sort.onNudge} />
           <button type="button" onClick={onAddService} aria-label={`Agregar servicio a ${company}`} title="Agregar servicio" className={btn.icon}>
             <Plus className="size-4" />
           </button>
@@ -758,10 +772,21 @@ function GroupRow({ entry, unsubscribed, expanded, canMoveUp, canMoveDown, onTog
   )
 }
 
-function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onReminder, onDelete }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onReminder: (date: string) => void; onDelete: () => void }) {
-  const groups: { title: string; items: [string, string][] }[] = [
+// El precio al que se vendió se carga directo en el detalle; el botón aparece cuando hay un cambio sin guardar.
+function SaleValue({ value, busy, onSave }: { value: string; busy: boolean; onSave: (value: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); if (draft !== value) onSave(draft) }} className="mt-1 flex items-center gap-2 font-normal">
+      <div className="min-w-0 flex-1"><MoneyInput label="Valor de venta" placeholder="Anotá el precio" value={draft} onChange={setDraft} /></div>
+      {draft !== value && <button type="submit" disabled={busy} className={`${btn.primary} h-11`}>Guardar</button>}
+    </form>
+  )
+}
+
+function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onReminder, onDelete, onSaleValue, tasks }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onReminder: (date: string) => void; onDelete: () => void; onSaleValue: (value: string) => void; tasks: React.ReactNode }) {
+  const groups: { title: string; items: [string, React.ReactNode][] }[] = [
     { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
-    { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
+    { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Valor de venta', <SaleValue key={client.row} value={client.valorVenta} busy={busy} onSave={onSaleValue} />], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
     { title: 'Cobro', items: [['Plan', clean(client.plan)], ['Método de pago', clean(client.metodoPago)], ['Último pago', formatDate(paidByMp > client.ultimoPago ? paidByMp : client.ultimoPago)], ['Próximo pago', formatDate(currentDueDate(client.metodoPago, client.proximoPago, paidByMp))]] },
   ]
   return (
@@ -798,6 +823,7 @@ function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, 
           </div>
         </div>
       )}
+      {tasks}
       <div className="space-y-5">
         {groups.map((group) => (
           <div key={group.title}>

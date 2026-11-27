@@ -142,3 +142,17 @@ export function mensajeSeguimiento(p: Pick<Prospect, 'negocio' | 'producto' | 'c
   const que = p.producto === 'Carta digital' ? 'la carta digital' : 'la propuesta'
   return `${saludo} ¿Cómo va? Te escribo por ${que} que les preparé para ${p.negocio}${p.demo ? ` (${p.demo})` : ''}. ¿Pudieron verla? Si quieren cambiar algo o tienen dudas, lo vemos sin problema.`
 }
+
+// Lo que ya se sabe del prospecto, para precargar su alta como cliente.
+export function datosCliente(p: Pick<Prospect, 'negocio' | 'contacto' | 'producto' | 'email' | 'whatsapp' | 'web'>) {
+  const [nombre = '', ...apellido] = p.contacto.trim().split(/\s+/)
+  let dominio = ''
+  // Solo en un rediseño la web actual es el dominio del cliente; en una carta suele ser un PDF o un perfil.
+  if (p.producto === 'Rediseño web' && p.web) {
+    try {
+      const host = new URL(/^https?:/i.test(p.web) ? p.web : `https://${p.web}`).hostname.replace(/^www\./, '')
+      if (host.includes('.') && !/(instagram|facebook|linktr\.ee|google)/.test(host)) dominio = host
+    } catch {}
+  }
+  return { nombre, apellido: apellido.join(' '), empresa: p.negocio, producto: p.producto === 'Otro' ? '' : p.producto, mail: p.email, telefono: p.whatsapp, dominio }
+}

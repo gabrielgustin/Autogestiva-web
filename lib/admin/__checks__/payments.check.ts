@@ -11,7 +11,7 @@ assert.equal(nextPaymentDate('Pago semestral', '2026-08-31'), '2027-02-28')
 assert.equal(nextPaymentDate('Pago anual', '2024-02-29'), '2025-02-28')
 assert.equal(nextPaymentDate('Pago mensual', ''), '')
 
-const client = (empresa: string, proximoPago: string) => ({ row: empresa, nombre: 'A', apellido: 'B', empresa, producto: 'Web', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '$10.000', metodoPago: 'Débito Automático', ultimoPago: '', proximoPago, avisoSuscripcion: '' })
+const client = (empresa: string, proximoPago: string) => ({ row: empresa, nombre: 'A', apellido: 'B', empresa, producto: 'Web', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '$10.000', metodoPago: 'Débito Automático', ultimoPago: '', proximoPago, avisoSuscripcion: '', valorVenta: '' })
 const today = new Date(2026, 10, 24)
 const alerts = buildClientAlerts([client('Life Gym', '2026-11-10'), client('CTP', '2026-11-10'), client('Lejos', '2027-03-01')], today, { 'Life Gym': '2026-11-12' })
 assert.deepEqual(alerts.map((a) => a.cliente), ['CTP'])

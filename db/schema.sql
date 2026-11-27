@@ -22,6 +22,21 @@ create table if not exists clients (
   updated_at timestamptz not null default now()
 );
 
+-- Precio al que se le vendió el servicio (texto con formato $150.000, igual que el plan).
+alter table clients add column if not exists valor_venta text;
+
+-- Cosas por hacer de cada cliente (sección Clientes): aparecen en la «Agenda de hoy» cuando les llega la fecha.
+create table if not exists client_tasks (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references clients(id) on delete cascade,
+  texto text not null,
+  fecha date not null,
+  hecho_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists client_tasks_pendientes on client_tasks (fecha) where hecho_at is null;
+
 -- Quién puede entrar al panel. La contraseña se guarda como hash bcrypt (nunca en texto plano).
 create table if not exists admin_users (
   id uuid primary key default gen_random_uuid(),
