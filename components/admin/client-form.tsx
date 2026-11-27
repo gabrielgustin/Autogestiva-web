@@ -6,7 +6,7 @@ import { chargesPeriodically, nextPaymentDate } from '@/lib/admin/payments'
 import { inputClass } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 
-export const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '', avisoSuscripcion: '', valorVenta: '' }
+export const emptyForm: ClientInput = { nombre: '', apellido: '', empresa: '', producto: '', dominio: '', dominioVencimiento: '', mail: '', telefono: '', servidor: '', baseDatos: '', plan: '', metodoPago: '', ultimoPago: '', proximoPago: '', avisoSuscripcion: '', valorVenta: '', neonProyecto: '' }
 const paymentOptions = ['Débito Automático', 'Pago mensual', 'Pago semestral', 'Pago anual', 'Ninguno']
 const planOptions = ['$10.000', '$15.000', '$20.000', '$30.000', '$40.000', '$50.000']
 const CUSTOM_PLAN = '__personalizado'
@@ -17,7 +17,7 @@ const formatMoney = (digits: string) => (digits ? `$${Number(digits).toLocaleStr
 // Secciones de la ficha: qué campos van juntos y cuáles son obligatorios.
 const formSections: { title: string; fields: (keyof ClientInput)[] }[] = [
   { title: 'Contacto', fields: ['nombre', 'apellido', 'empresa', 'mail', 'telefono'] },
-  { title: 'Servicio', fields: ['producto', 'dominio', 'dominioVencimiento', 'valorVenta', 'servidor', 'baseDatos'] },
+  { title: 'Servicio', fields: ['producto', 'dominio', 'dominioVencimiento', 'valorVenta', 'servidor', 'baseDatos', 'neonProyecto'] },
   { title: 'Cobro', fields: ['plan', 'metodoPago', 'ultimoPago'] },
 ]
 const requiredFields = new Set<keyof ClientInput>(['nombre', 'apellido', 'plan'])
@@ -35,7 +35,10 @@ export function MoneyInput({ label, value, onChange, placeholder, autoFocus }: {
 
 export const missingFields = (form: ClientInput) => [...requiredFields].filter((field) => !form[field].trim()).map((field) => COLUMN_LABELS[field])
 
-export function ClientFields({ form, setForm, customPlan, setCustomPlan }: { form: ClientInput; setForm: React.Dispatch<React.SetStateAction<ClientInput>>; customPlan: boolean; setCustomPlan: (value: boolean) => void }) {
+export type NeonProject = { id: string; name: string }
+const NO_BASE = '__ninguna'
+
+export function ClientFields({ form, setForm, customPlan, setCustomPlan, neonProjects = [] }: { form: ClientInput; setForm: React.Dispatch<React.SetStateAction<ClientInput>>; customPlan: boolean; setCustomPlan: (value: boolean) => void; neonProjects?: NeonProject[] }) {
   function update(field: keyof ClientInput, value: string) {
     setForm((current) => {
       const next = { ...current, [field]: value }
@@ -75,6 +78,15 @@ export function ClientFields({ form, setForm, customPlan, setCustomPlan }: { for
                     </div>
                   ) : field === 'valorVenta' ? (
                     <MoneyInput label="Valor de venta" placeholder="Ej.: 150.000" value={form.valorVenta} onChange={(value) => update('valorVenta', value)} />
+                  ) : field === 'neonProyecto' ? (
+                    // Solo la base propia de este servicio: el costo de Neon se le descuenta a este cliente.
+                    <SelectField
+                      ariaLabel="Base en Neon"
+                      placeholder="Sin base en Neon"
+                      value={form.neonProyecto}
+                      onChange={(value) => update('neonProyecto', value === NO_BASE ? '' : value)}
+                      options={[{ value: NO_BASE, label: 'Sin base en Neon' }, ...neonProjects.map((p) => ({ value: p.id, label: p.name })), ...(form.neonProyecto && !neonProjects.some((p) => p.id === form.neonProyecto) ? [{ value: form.neonProyecto, label: form.neonProyecto }] : [])]}
+                    />
                   ) : field === 'metodoPago' ? (
                     <SelectField ariaLabel="Método de pago" placeholder="Elegí un método" value={form.metodoPago} onChange={(value) => update('metodoPago', value)} options={[...new Set([...paymentOptions, ...(form.metodoPago ? [form.metodoPago] : [])])]} />
                   ) : field === 'dominioVencimiento' || field === 'ultimoPago' ? (

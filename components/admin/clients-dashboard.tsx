@@ -9,10 +9,11 @@ import { currentDueDate, isAutoDebit, nextPaymentDate } from '@/lib/admin/paymen
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
 import { DateField, SelectField } from '@/components/admin/pickers'
 import { reorder } from '@/lib/admin/reorder'
+import { planAmount, profitByClient } from '@/lib/admin/profit'
 import { Agenda, cuando } from '@/components/admin/agenda'
 import { ClientTasks } from '@/components/admin/client-tasks'
 import { useDragSort } from '@/components/admin/use-drag-sort'
-import { ClientFields, MoneyInput, emptyForm, isCustomPlan, missingFields } from '@/components/admin/client-form'
+import { ClientFields, MoneyInput, type NeonProject, emptyForm, isCustomPlan, missingFields } from '@/components/admin/client-form'
 
 // Fecha de hoy en hora local (AAAA-MM-DD); toISOString daría el día UTC.
 const todayIso = () => new Date().toLocaleDateString('sv-SE')
@@ -80,7 +81,6 @@ function arrange(list: SheetClient[], scope: string, row: string, target: string
 // Pendiente más próximo entre los servicios dados (la lista ya viene ordenada por fecha).
 const nextTask = (tasks: ClientTask[], rows: string[]) => tasks.find((task) => rows.includes(task.clientId))
 
-const planAmount = (plan: string) => Number.parseInt(plan.replace(/[^0-9]/g, ''), 10) || 0
 const money = (value: number) => `$${value.toLocaleString('es-AR')}`
 const alertRow = (alert: ClientAlert) => alert.id.slice(alert.id.indexOf('-') + 1)
 
@@ -112,6 +112,9 @@ export function ClientsDashboard() {
   const [showAllAlerts, setShowAllAlerts] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [tasks, setTasks] = useState<ClientTask[]>([])
+  // Costo proyectado del mes por proyecto de Neon (USD) y dólar tarjeta: para la rentabilidad de cada cliente.
+  const [neon, setNeon] = useState<{ projects: NeonProject[]; costUsd: Record<string, number> } | null>(null)
+  const [dolar, setDolar] = useState<number | null>(null)
 
   const notify = useCallback((message: string, tone: Toast['tone'] = 'ok') => setToast({ message, tone }), [])
   useEffect(() => {
@@ -163,6 +166,13 @@ export function ClientsDashboard() {
     load()
     loadMercadoPago()
     tasksApi('GET').then(setTasks).catch((e) => notify(e.message, 'error'))
+    fetch('/api/administracion/neon', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { projects: { id: string; name: string; projectedTotal: number }[] } | null) => {
+        if (d) setNeon({ projects: d.projects.map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)), costUsd: Object.fromEntries(d.projects.map((p) => [p.id, p.projectedTotal])) })
+      })
+      .catch(() => {})
+    fetch('/api/administracion/dolar', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setDolar(d.venta) }).catch(() => {})
   }, [load, loadMercadoPago, tasksApi, notify])
 
 
@@ -189,6 +199,13 @@ export function ClientsDashboard() {
   }, [clients, plan, query, servidor])
   const visibleEntries = useMemo(() => buildEntries(filtered), [filtered])
   const totalEntries = useMemo(() => buildEntries(clients).length, [clients])
+  const profit = useMemo(() => {
+    if (!neon || !dolar) return null
+    const rows = profitByClient(buildEntries(clients).map((entry) => ({ key: entry.key, nombre: [...new Set(entry.members.map((m) => clean(m.empresa) || `${m.nombre} ${m.apellido}`))].join(' · '), members: entry.members })), neon.costUsd, dolar)
+    const asignadas = new Set(rows.flatMap((row) => row.bases))
+    const sinAsignar = neon.projects.filter((p) => !asignadas.has(p.id) && (neon.costUsd[p.id] ?? 0) > 0)
+    return { rows, sinAsignar, ganancia: rows.reduce((t, r) => t + r.ganancia, 0), costo: rows.reduce((t, r) => t + r.costoArs, 0) }
+  }, [clients, neon, dolar])
   const isFiltering = query.trim() !== '' || plan !== 'all' || servidor !== 'all'
   const mpPaidFor = (client: SheetClient) => (isAutoDebit(client.metodoPago) ? mpPaid[client.empresa] ?? '' : '')
   const mpConfirmed = Object.keys(mpPaid).length
@@ -485,6 +502,8 @@ export function ClientsDashboard() {
         </section>
       )}
 
+      {profit && <ProfitSection profit={profit} dolar={dolar!} onOpen={(key) => { const entry = buildEntries(clients).find((e) => e.key === key); if (entry) setSelectedClient(entry.members[0]) }} />}
+
       <section className={`${card} overflow-hidden`} aria-label="Lista de clientes">
         <div className="flex flex-col gap-2 border-b border-line p-3 md:flex-row md:items-center md:p-4">
           <label className="relative flex-1">
@@ -549,6 +568,7 @@ export function ClientsDashboard() {
           onPaid={() => markPaid(selectedClient)}
           onReminder={(date) => setReminder(selectedClient, date)}
           onDelete={() => remove(selectedClient)}
+          neonBase={selectedClient.neonProyecto ? { name: neon?.projects.find((p) => p.id === selectedClient.neonProyecto)?.name ?? selectedClient.neonProyecto, usd: neon?.costUsd[selectedClient.neonProyecto] ?? null } : null}
           onSaleValue={(valorVenta) => patchClient(selectedClient, { valorVenta }, valorVenta ? `Valor de venta guardado: ${valorVenta}` : 'Valor de venta quitado')}
           tasks={<ClientTasks key={selectedClient.row} tasks={tasks.filter((task) => task.clientId === selectedClient.row)} today={todayIso()} onAdd={(texto, fecha) => addTask(selectedClient, texto, fecha)} onDone={doneTask} />}
         />
@@ -567,7 +587,7 @@ export function ClientsDashboard() {
           }
         >
           <form id="client-form" onSubmit={save} className="space-y-6">
-            <ClientFields form={form} setForm={setForm} customPlan={customPlan} setCustomPlan={setCustomPlan} />
+            <ClientFields form={form} setForm={setForm} customPlan={customPlan} setCustomPlan={setCustomPlan} neonProjects={neon?.projects} />
             {formError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
           </form>
         </Modal>
@@ -629,6 +649,50 @@ function AlertItem({ alert, client, showService, unsubscribed, busy, onPaid, onR
 }
 
 const rowGrid = 'md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.45fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_7.5rem] md:items-center md:gap-4'
+
+// Cuánto deja cada cliente por mes: plan menos lo que cuesta su base de Neon (proyección del mes, al dólar tarjeta).
+function ProfitSection({ profit, dolar, onOpen }: { profit: { rows: ReturnType<typeof profitByClient>; sinAsignar: NeonProject[]; ganancia: number; costo: number }; dolar: number; onOpen: (key: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section aria-label="Rentabilidad" className={`${card} mb-6 overflow-hidden`}>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left hover:bg-paper/60 md:px-5">
+        <span>
+          <span className="font-display text-lg font-bold tracking-tight">Rentabilidad mensual</span>
+          <span className="block text-xs text-muted-ink">Planes menos el costo de Neon proyectado este mes · dólar tarjeta {money(Math.round(dolar))}</span>
+        </span>
+        <span className="flex items-center gap-3">
+          <span className="text-right"><span className="block text-xs text-muted-ink">Ganancia</span><span className="font-display text-xl font-bold text-emerald-700">{money(profit.ganancia)}</span></span>
+          <span className="text-right"><span className="block text-xs text-muted-ink">Costo Neon</span><span className="font-semibold text-red-600">{money(profit.costo)}</span></span>
+          <ChevronDown className={`size-4 text-ink/40 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-line">
+          <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 bg-paper/60 px-5 py-2 md:grid">
+            {['Cliente', 'Cobra por mes', 'Costo Neon', 'Le queda'].map((label) => <div key={label} className="eyebrow text-[10px] text-muted-ink">{label}</div>)}
+          </div>
+          <ul className="divide-y divide-line">
+            {profit.rows.map((row) => (
+              <li key={row.key}>
+                <button type="button" onClick={() => onOpen(row.key)} className="grid w-full grid-cols-2 gap-x-3 gap-y-1 px-4 py-2.5 text-left text-sm hover:bg-paper/60 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] md:px-5">
+                  <span className="col-span-2 truncate font-semibold md:col-span-1">{row.nombre}</span>
+                  <span className="text-muted-ink md:text-ink"><span className="md:hidden">Cobra </span>{money(row.ingreso)}</span>
+                  <span className="text-muted-ink">{row.bases.length ? <>{money(row.costoArs)} <span className="text-xs">(US$ {row.costoUsd.toFixed(2)})</span></> : 'Sin base asignada'}</span>
+                  <span className={`font-semibold ${row.ganancia < 0 ? 'text-red-600' : 'text-emerald-700'}`}><span className="font-normal text-muted-ink md:hidden">Le queda </span>{money(row.ganancia)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {profit.sinAsignar.length > 0 && (
+            <p className="border-t border-line bg-amber-50/60 px-4 py-2.5 text-xs text-amber-900 md:px-5">
+              Bases con gasto sin cliente asignado (la del panel es tuya): {profit.sinAsignar.map((p) => p.name).join(', ')}. Si alguna es de un cliente, asignala en «Editar» → «Base en Neon».
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
 
 type SortProps = { scope: string; sortKey: string; placeholder: boolean; onPointerDown: (e: React.PointerEvent<HTMLElement>) => void; onNudge: (direction: -1 | 1) => void }
 
@@ -790,10 +854,10 @@ function SaleValue({ value, busy, onSave }: { value: string; busy: boolean; onSa
   )
 }
 
-function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onReminder, onDelete, onSaleValue, tasks }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onReminder: (date: string) => void; onDelete: () => void; onSaleValue: (value: string) => void; tasks: React.ReactNode }) {
+function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, onAddService, onPaid, onReminder, onDelete, onSaleValue, neonBase, tasks }: { client: SheetClient; busy: boolean; unsubscribed: boolean; paidByMp: string; onClose: () => void; onEdit: () => void; onAddService: () => void; onPaid: () => void; onReminder: (date: string) => void; onDelete: () => void; onSaleValue: (value: string) => void; neonBase: { name: string; usd: number | null } | null; tasks: React.ReactNode }) {
   const groups: { title: string; items: [string, React.ReactNode][] }[] = [
     { title: 'Contacto', items: [['Empresa', clean(client.empresa)], ['Mail', clean(client.mail)], ['Teléfono', clean(client.telefono)]] },
-    { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Valor de venta', <SaleValue key={client.row} value={client.valorVenta} busy={busy} onSave={onSaleValue} />], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)]] },
+    { title: 'Servicio', items: [['Producto', clean(client.producto)], ['Dominio', clean(client.dominio)], ['Vencimiento del dominio', formatDate(client.dominioVencimiento)], ['Valor de venta', <SaleValue key={client.row} value={client.valorVenta} busy={busy} onSave={onSaleValue} />], ['Servidor', clean(client.servidor)], ['Base de datos', clean(client.baseDatos)], ['Base en Neon', neonBase ? `${neonBase.name}${neonBase.usd !== null ? ` · US$ ${neonBase.usd.toFixed(2)} este mes` : ''}` : '']] },
     { title: 'Cobro', items: [['Plan', clean(client.plan)], ['Método de pago', clean(client.metodoPago)], ['Último pago', formatDate(paidByMp > client.ultimoPago ? paidByMp : client.ultimoPago)], ['Próximo pago', formatDate(currentDueDate(client.metodoPago, client.proximoPago, paidByMp))]] },
   ]
   return (

@@ -25,6 +25,9 @@ create table if not exists clients (
 -- Precio al que se le vendió el servicio (texto con formato $150.000, igual que el plan).
 alter table clients add column if not exists valor_venta text;
 
+-- Proyecto de Neon con la base del servicio (id del proyecto), para calcular cuánto cuesta cada cliente.
+alter table clients add column if not exists neon_proyecto text;
+
 -- Cosas por hacer de cada cliente (sección Clientes): aparecen en la «Agenda de hoy» cuando les llega la fecha.
 create table if not exists client_tasks (
   id uuid primary key default gen_random_uuid(),

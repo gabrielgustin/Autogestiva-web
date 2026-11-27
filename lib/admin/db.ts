@@ -12,7 +12,7 @@ export function sql() {
   return client
 }
 
-export const CLIENT_COLUMNS = 'id,nombre,apellido,empresa,producto,dominio,dominio_vencimiento::text,mail,telefono,servidor,base_datos,plan,metodo_pago,ultimo_pago::text,proximo_pago::text,aviso_suscripcion::text,valor_venta,orden'
+export const CLIENT_COLUMNS = 'id,nombre,apellido,empresa,producto,dominio,dominio_vencimiento::text,mail,telefono,servidor,base_datos,plan,metodo_pago,ultimo_pago::text,proximo_pago::text,aviso_suscripcion::text,valor_venta,neon_proyecto,orden'
 
 export type ClientRow = {
   id: string
@@ -32,11 +32,12 @@ export type ClientRow = {
   proximo_pago: string | null
   aviso_suscripcion: string | null
   valor_venta: string | null
+  neon_proyecto: string | null
   orden: number | null
 }
 
 export function toClient(row: ClientRow) {
-  return { row: row.id, nombre: row.nombre, apellido: row.apellido, empresa: row.empresa ?? '', producto: row.producto ?? '', dominio: row.dominio ?? '', dominioVencimiento: row.dominio_vencimiento ?? '', mail: row.mail ?? '', telefono: row.telefono ?? '', servidor: row.servidor ?? '', baseDatos: row.base_datos ?? '', plan: row.plan ?? '', metodoPago: row.metodo_pago ?? '', ultimoPago: row.ultimo_pago ?? '', proximoPago: row.proximo_pago ?? '', avisoSuscripcion: row.aviso_suscripcion ?? '', valorVenta: row.valor_venta ?? '', orden: row.orden ?? 0 }
+  return { row: row.id, nombre: row.nombre, apellido: row.apellido, empresa: row.empresa ?? '', producto: row.producto ?? '', dominio: row.dominio ?? '', dominioVencimiento: row.dominio_vencimiento ?? '', mail: row.mail ?? '', telefono: row.telefono ?? '', servidor: row.servidor ?? '', baseDatos: row.base_datos ?? '', plan: row.plan ?? '', metodoPago: row.metodo_pago ?? '', ultimoPago: row.ultimo_pago ?? '', proximoPago: row.proximo_pago ?? '', avisoSuscripcion: row.aviso_suscripcion ?? '', valorVenta: row.valor_venta ?? '', neonProyecto: row.neon_proyecto ?? '', orden: row.orden ?? 0 }
 }
 
 const FIELD_MAX = 200
@@ -53,6 +54,7 @@ export function toRow(input: Record<string, unknown>): { row: Record<string, str
   if (!nombre || !apellido) return { error: 'Nombre y apellido son obligatorios' }
   const dates = { dominio_vencimiento: text(input.dominioVencimiento), ultimo_pago: text(input.ultimoPago), proximo_pago: text(input.proximoPago), aviso_suscripcion: text(input.avisoSuscripcion) }
   if (Object.values(dates).some((value) => value && !DATE_RE.test(value))) return { error: 'Las fechas deben tener formato AAAA-MM-DD' }
+  if (text(input.neonProyecto) && !/^[a-z0-9-]{3,60}$/.test(text(input.neonProyecto))) return { error: 'Proyecto de Neon inválido' }
   return {
     row: {
       nombre, apellido,
@@ -61,6 +63,7 @@ export function toRow(input: Record<string, unknown>): { row: Record<string, str
       servidor: text(input.servidor) || null, base_datos: text(input.baseDatos) || null, plan: text(input.plan) || null,
       metodo_pago: text(input.metodoPago) || null, ultimo_pago: dates.ultimo_pago || null, proximo_pago: dates.proximo_pago || null, aviso_suscripcion: dates.aviso_suscripcion || null,
       valor_venta: text(input.valorVenta) || null,
+      neon_proyecto: text(input.neonProyecto) || null,
     },
   }
 }
