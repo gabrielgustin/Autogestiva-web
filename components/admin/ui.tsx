@@ -54,7 +54,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 aria-current={active(item.href) ? 'page' : undefined}
-                className={`flex-1 rounded-full px-3 py-2 text-center sm:px-4 text-sm font-semibold transition-colors md:flex-none ${active(item.href) ? 'bg-ink text-white' : 'text-ink/70 hover:bg-white hover:text-ink'}`}
+                className={`flex-1 whitespace-nowrap rounded-full px-2.5 py-2 text-center text-[13px] font-semibold sm:px-4 sm:text-sm transition-colors md:flex-none ${active(item.href) ? 'bg-ink text-white' : 'text-ink/70 hover:bg-white hover:text-ink'}`}
               >
                 {item.label}
               </Link>
