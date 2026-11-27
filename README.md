@@ -118,9 +118,15 @@ Menú: **Hoy · Clientes · Infraestructura · Prospectos**. Al iniciar sesión 
 - Permite despertar o suspender una base y ver sus tablas.
 - En producción el token de Neon llega por Vercel Connect; en local haría falta `NEON_API_KEY`.
 
-### Sesión
-- El login compara contra `admin_users` (contraseña con hash bcrypt).
-- La sesión se cierra al cerrar la pestaña (`session-guard.tsx`). Por eso cada pestaña nueva, o la app instalada, pide entrar de nuevo.
+### Sesión y seguridad (`/administracion/seguridad`)
+- El login compara contra `admin_users` (contraseña con hash bcrypt) y no delata qué emails existen.
+- **Freno de intentos** guardado en la base (`login_attempts`, `lib/admin/login-guard.ts`): 5 fallos por IP o 20 por email en 15 minutos bloquean el ingreso 15 minutos.
+- **Verificación en dos pasos** opcional con app de códigos (TOTP, `lib/admin/totp.ts`). Se activa desde «Seguridad», el ícono del escudo arriba a la derecha. Un código no sirve dos veces.
+  - Si se pierde el celular: poner `totp_secret = null` en `admin_users` desde la consola de Neon.
+- **Aviso al celular** de cada ingreso, si los avisos están activados.
+- **Contraseña**: se cambia desde «Seguridad», con mínimo 12 caracteres.
+- **Encabezados** (`next.config.mjs`): el panel no se puede mostrar dentro de otros sitios y las APIs no se guardan en caché.
+- La sesión se cierra al cerrar la pestaña o tras 10 minutos sin actividad (`session-guard.tsx`). Por eso cada pestaña nueva, o la app instalada, pide entrar de nuevo.
 
 ---
 
@@ -131,7 +137,8 @@ Menú: **Hoy · Clientes · Infraestructura · Prospectos**. Al iniciar sesión 
 | `clients` | Servicios de cada cliente: contacto, dominio, plan, cobro, valor de venta, base en Neon y orden |
 | `client_tasks` | Pendientes por cliente (`hecho_at` marca los terminados) |
 | `prospects` / `prospect_events` | Prospectos de venta y su historial |
-| `admin_users` | Quién puede entrar al panel |
+| `admin_users` | Quién puede entrar al panel (hash de la contraseña y secreto de la verificación en dos pasos) |
+| `login_attempts` | Intentos fallidos de ingreso de los últimos minutos (freno a quien prueba contraseñas) |
 | `push_subscriptions` | Dispositivos con los avisos activados |
 | `app_settings` | Ajustes internos: claves de las notificaciones y fecha del último resumen diario |
 
@@ -164,7 +171,7 @@ npx tsc --noEmit -p .
 npm run build
 ```
 
-Cubren pagos y alertas, prospectos (teléfonos, WhatsApp, mensaje, datos para el alta), orden por arrastre, rentabilidad, proyección de Neon y texto del resumen diario.
+Cubren pagos y alertas, prospectos (teléfonos, WhatsApp, mensaje, datos para el alta), orden por arrastre, rentabilidad, proyección de Neon, texto del resumen diario y códigos de la verificación en dos pasos (con los vectores de la RFC 6238).
 
 ---
 
