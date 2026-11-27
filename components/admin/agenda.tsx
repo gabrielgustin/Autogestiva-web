@@ -16,14 +16,14 @@ export function cuando(iso: string, today: string): { text: string; tone: 'red' 
   return { text: fmtDay(iso), tone: 'gray' }
 }
 
-export type AgendaItem = { key: string; fecha: string; titulo: string; detalle: string; whatsapp?: boolean; onOpen: () => void; onDone: () => void }
+export type AgendaItem = { key: string; fecha: string; titulo: string; detalle: string; tag?: string; whatsapp?: boolean; onOpen: () => void; onDone?: () => void }
 
-export function Agenda({ items, today, className = '' }: { items: AgendaItem[]; today: string; className?: string }) {
+export function Agenda({ items, today, title = 'Agenda de hoy', className = '' }: { items: AgendaItem[]; today: string; title?: string; className?: string }) {
   if (!items.length) return null
   return (
-    <section className={`${card} overflow-hidden ${className}`} aria-labelledby="agenda-title">
+    <section className={`${card} overflow-hidden ${className}`} aria-label={title}>
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-5">
-        <h2 id="agenda-title" className="font-display text-lg font-bold tracking-tight">Agenda de hoy</h2>
+        <h2 className="font-display text-lg font-bold tracking-tight">{title} <span className="text-muted-ink">· {items.length}</span></h2>
         <span className="text-xs text-muted-ink">{fmtDay(today)}</span>
       </div>
       <ul className="divide-y divide-line">
@@ -34,15 +34,18 @@ export function Agenda({ items, today, className = '' }: { items: AgendaItem[]; 
               <button type="button" onClick={item.onOpen} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left transition-colors hover:bg-paper md:pl-5">
                 <Badge tone={when.tone} className="w-[92px] justify-center">{when.text}</Badge>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{item.titulo}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-semibold">{item.titulo}</span>
+                    {item.tag && <span className="eyebrow shrink-0 text-[9px] text-muted-ink">{item.tag}</span>}
+                  </span>
                   <span className="block truncate text-xs text-muted-ink">{item.detalle}</span>
                 </span>
                 {item.whatsapp && <MessageCircle className="size-4 shrink-0 text-emerald-600" aria-label="Tiene WhatsApp" />}
                 <ChevronRight className="size-4 shrink-0 text-ink/30" />
               </button>
-              <button type="button" onClick={item.onDone} aria-label={`Marcar hecho: ${item.titulo}`} className="mx-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:mx-5">
+              {item.onDone && <button type="button" onClick={item.onDone} aria-label={`Marcar hecho: ${item.titulo}`} className="mx-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 md:mx-5">
                 <Check className="size-4" /> Hecho
-              </button>
+              </button>}
             </li>
           )
         })}

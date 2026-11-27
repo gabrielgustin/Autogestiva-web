@@ -27,7 +27,7 @@ export function LoginForm() {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error ?? 'No se pudo iniciar sesión')
       sessionStorage.setItem(TAB_MARKER, '1')
-      router.push('/administracion')
+      router.push('/administracion/hoy')
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo iniciar sesión')

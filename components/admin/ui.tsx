@@ -28,6 +28,7 @@ export const inputClass =
 export const card = 'rounded-2xl border border-line bg-white'
 
 const nav = [
+  { href: '/administracion/hoy', label: 'Hoy' },
   { href: '/administracion/clientes', label: 'Clientes' },
   { href: '/administracion', label: 'Infraestructura' },
   { href: '/administracion/prospectos', label: 'Prospectos' },
@@ -41,7 +42,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 md:px-8">
           <div className="flex items-center gap-3">
-            <Link href="/administracion/clientes" aria-label="Autogestiva, ir a clientes">
+            <Link href="/administracion/hoy" aria-label="Autogestiva, ir a Hoy">
               <Logo bg="#ffffff" className="h-[34px] md:h-[38px]" />
             </Link>
             <span className="eyebrow hidden rounded-full border border-line px-2.5 py-1.5 text-[10px] text-muted-ink sm:inline-block">Panel</span>
@@ -53,7 +54,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 aria-current={active(item.href) ? 'page' : undefined}
-                className={`flex-1 rounded-full px-4 py-2 text-center text-sm font-semibold transition-colors md:flex-none ${active(item.href) ? 'bg-ink text-white' : 'text-ink/70 hover:bg-white hover:text-ink'}`}
+                className={`flex-1 rounded-full px-3 py-2 text-center sm:px-4 text-sm font-semibold transition-colors md:flex-none ${active(item.href) ? 'bg-ink text-white' : 'text-ink/70 hover:bg-white hover:text-ink'}`}
               >
                 {item.label}
               </Link>

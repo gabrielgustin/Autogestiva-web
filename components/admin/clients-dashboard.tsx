@@ -129,6 +129,13 @@ export function ClientsDashboard() {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error ?? 'No se pudieron cargar los clientes')
       setClients(result)
+      // Desde «Hoy» se llega con ?abrir=<id> para ver el detalle directamente (solo la primera vez).
+      const params = new URLSearchParams(window.location.search)
+      const abrir = result.find((client: SheetClient) => client.row === params.get('abrir'))
+      if (abrir) {
+        setSelectedClient(abrir)
+        window.history.replaceState(null, '', window.location.pathname)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudieron cargar los clientes')
     } finally {

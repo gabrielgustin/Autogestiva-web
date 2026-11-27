@@ -9,7 +9,7 @@ import { AddClient } from '@/components/admin/add-client'
 import { Agenda, cuando, fmtDay } from '@/components/admin/agenda'
 import { WhatsAppIcon } from '@/components/home/primitives'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
-import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, SIN_CONTACTO, daysBetween, esPrimerContacto, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
+import { CERRADOS, EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, SIN_CONTACTO, daysBetween, esPrimerContacto, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
 
 // Sección Prospectos del panel: agenda del día, embudo por estado, banco de prospectos y ficha con WhatsApp e historial.
 type Toast = { message: string; tone: 'ok' | 'error' }
@@ -18,7 +18,6 @@ const estadoOptions = ESTADOS.map((name) => ({ value: name, label: nombreEstado(
 type Evento = { tipo: string; texto?: string }
 
 const PAGE = 50
-const CERRADOS: Estado[] = ['Cliente', 'Rechazado', 'En pausa']
 const MEDIOS = [
   { tipo: 'WhatsApp', icon: WhatsAppIcon },
   { tipo: 'Instagram', icon: Instagram },
@@ -81,7 +80,15 @@ export function ProspectsDashboard() {
 
   useEffect(() => {
     api('/api/administracion/prospects')
-      .then(setProspects)
+      .then((list: Prospect[]) => {
+        setProspects(list)
+        // Desde «Hoy» se llega con ?abrir=<id> para ver la ficha directamente.
+        const abrir = new URLSearchParams(window.location.search).get('abrir')
+        if (abrir && list.some((p) => p.id === abrir)) {
+          setOpenId(abrir)
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [api])

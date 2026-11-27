@@ -9,6 +9,8 @@ export const nombreEstado = (estado: string) => (estado === 'Prospecto' ? 'Por c
 
 // Estados que cuentan como conversación abierta (ya se habló, todavía no hay respuesta final).
 export const EN_CURSO: readonly Estado[] = ['Contactado', 'Interesado']
+// Etapas que ya no llevan seguimiento: no aparecen en la agenda.
+export const CERRADOS: readonly Estado[] = ['Cliente', 'Rechazado', 'En pausa']
 
 export const PRODUCTOS = ['Rediseño web', 'Carta digital', 'Landing web', 'Web + panel', 'Juegos para eventos', 'Web', 'Otro']
 
