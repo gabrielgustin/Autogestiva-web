@@ -41,7 +41,8 @@ export function ProspectsDashboard() {
   const [soloWa, setSoloWa] = useState(false)
   const [limit, setLimit] = useState(PAGE)
   const [openId, setOpenId] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
+  // Etapa en la que entra el prospecto nuevo: el botón de arriba lo deja en «Por contactar», el de la columna en «Hacer demo».
+  const [creating, setCreating] = useState<Estado | null>(null)
   const [confirm, confirmDialog] = useConfirm()
   const [alta, setAlta] = useState<Prospect | null>(null)
   const [dragging, setDragging] = useState<{ id: string; width: number } | null>(null)
@@ -272,7 +273,7 @@ export function ProspectsDashboard() {
   return (
     <AdminShell>
       <PageHeader eyebrow="Ventas" title="Prospectos" description="Del primer mensaje al cliente: a quién escribirle hoy, en qué quedó cada demo y qué sigue con cada negocio.">
-        <button type="button" className={btn.accent} onClick={() => setCreating(true)}>
+        <button type="button" className={btn.accent} onClick={() => setCreating('Prospecto')}>
           <Plus className="size-4" /> Nuevo prospecto
         </button>
       </PageHeader>
@@ -338,6 +339,11 @@ export function ProspectsDashboard() {
                 className={`flex w-[280px] shrink-0 snap-start flex-col rounded-2xl border transition-colors duration-150 ${isOver ? 'border-brand bg-brand-light/70 ring-4 ring-brand/15' : 'border-line bg-white/60'} ${col === 'Rechazado' || col === 'En pausa' ? 'opacity-80' : ''}`}
               >
                 <div className={`flex min-h-32 flex-1 flex-col p-2 ${col === 'Rechazado' ? 'gap-1' : 'gap-2'}`}>
+                  {col === 'Hacer demo' && (
+                    <button type="button" onClick={() => setCreating('Hacer demo')} className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-dashed border-ink/20 py-2.5 text-sm font-semibold text-ink/60 transition-colors hover:border-brand hover:bg-brand-light/50 hover:text-brand">
+                      <Plus className="size-4" /> Agregar prospecto
+                    </button>
+                  )}
                   {items.map((p) => {
                     const when = p.proximoFecha ? cuando(p.proximoFecha, today) : null
                     // En «Rechazado» la tarjeta es una sola línea: ahí importa ver muchas, no el detalle.
@@ -422,7 +428,7 @@ export function ProspectsDashboard() {
       )}
 
       {open && <ProspectSheet key={open.id} prospect={open} api={api} save={save} notify={notify} today={today} onClose={() => setOpenId(null)} onDeleted={(id) => { setProspects((list) => list.filter((p) => p.id !== id)); setOpenId(null) }} />}
-      {creating && <NewProspect api={api} onClose={() => setCreating(false)} onCreated={(p) => { setProspects((list) => [p, ...list]); setCreating(false); setOpenId(p.id); notify('Prospecto cargado') }} />}
+      {creating && <NewProspect api={api} estado={creating} onClose={() => setCreating(null)} onCreated={(p) => { setProspects((list) => [p, ...list]); setCreating(null); setOpenId(p.id); notify('Prospecto cargado') }} />}
       {alta && (
         <AddClient
           prospect={alta}
@@ -787,7 +793,7 @@ function SiteViewer({ title, url: original, onClose }: { title: string; url: str
   )
 }
 
-function NewProspect({ api, onClose, onCreated }: { api: Api; onClose: () => void; onCreated: (p: Prospect) => void }) {
+function NewProspect({ api, estado, onClose, onCreated }: { api: Api; estado: Estado; onClose: () => void; onCreated: (p: Prospect) => void }) {
   const [form, setForm] = useState({ negocio: '', producto: 'Rediseño web', rubro: '', whatsapp: '', web: '', instagram: '', demo: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -798,7 +804,7 @@ function NewProspect({ api, onClose, onCreated }: { api: Api; onClose: () => voi
     setBusy(true)
     setError('')
     try {
-      onCreated(await api('/api/administracion/prospects', { method: 'POST', body: JSON.stringify({ ...form, estado: form.demo.trim() ? 'Demo lista' : 'Prospecto' }) }))
+      onCreated(await api('/api/administracion/prospects', { method: 'POST', body: JSON.stringify({ ...form, estado: form.demo.trim() ? 'Demo lista' : estado }) }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear')
       setBusy(false)
@@ -806,7 +812,7 @@ function NewProspect({ api, onClose, onCreated }: { api: Api; onClose: () => voi
   }
 
   return (
-    <Modal eyebrow="Ventas" title="Nuevo prospecto" onClose={onClose}>
+    <Modal eyebrow="Ventas" title={estado === 'Prospecto' ? 'Nuevo prospecto' : `Nuevo prospecto en «${nombreEstado(estado)}»`} onClose={onClose}>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-muted-ink sm:col-span-2">Negocio *<input required autoFocus value={form.negocio} onChange={set('negocio')} className={`${inputClass} mt-1`} /></label>
         <div className="text-xs font-medium text-muted-ink">Producto
