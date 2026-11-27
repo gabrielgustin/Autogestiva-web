@@ -8,7 +8,7 @@ import { MonthField } from '@/components/admin/pickers'
 
 type Cost = { compute: number; storage: number; restore: number; snapshots: number; branches: number; transfer: number; total: number }
 type Spike = { date: string; cost: number; average: number }
-type ProjectAlert = { type: 'transfer' | 'branches'; message: string }
+type ProjectAlert = { type: 'transfer' | 'branches' | 'awake'; message: string }
 type Project = { id: string; name: string; region: string; plan: string; endpointId: string | null; endpointStatus: string; computeHours: number | null; storageGbHours: number | null; transferGb: number | null; storageBytes: number | null; cost: Cost; projectedTotal: number; spike: Spike | null; alerts: ProjectAlert[] }
 type Data = { projects: Project[]; organizations: { id: string; name: string }[]; cost: { total: number; projected: number; elapsedDays: number; daysInMonth: number }; period?: { month?: string; from?: string; to?: string } | null; diagnostics?: string[]; consumptionAvailable?: boolean; syncedAt: string }
 
@@ -147,7 +147,7 @@ export default function InfrastructureDashboard() {
         <div className={`${card} p-5 md:p-6`}>
           <p className="eyebrow text-[10px] text-muted-ink">Proyección a fin de mes</p>
           <p className="font-display mt-3 text-4xl font-bold tracking-tight text-brand md:text-5xl">{showValue(costUnknown ? unavailable : money.format(data?.cost.projected ?? 0))}</p>
-          <p className="mt-2 text-sm text-muted-ink">Según el ritmo de gasto actual</p>
+          <p className="mt-2 text-sm text-muted-ink">Con el ritmo de gasto de los últimos 7 días</p>
         </div>
       </section>
 

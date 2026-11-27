@@ -2,6 +2,7 @@ import { getNeonToken } from '@/lib/admin/neon-token'
 import { NextResponse } from 'next/server'
 import { mapLimit, neon, neonErrorMessage } from '@/lib/admin/neon-api'
 import { requireAdmin } from '@/lib/admin/require-admin'
+import { AWAKE_ALERT_HOURS, awakeHours, projectMonth } from '@/lib/admin/neon-projection'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -36,6 +37,7 @@ type Usage = {
   maxChildBranches: number
   transfer: number
   days: Map<string, number>
+  cuDays: Map<string, number>
 }
 
 const round = (value: number) => Math.round(value * 100) / 100
@@ -58,17 +60,20 @@ export async function GET(request: Request) {
     const elapsedDays = isCurrentMonth ? Math.max(1, now.getUTCDate()) : daysInMonth
 
     const diagnostics: string[] = []
+    // Los días de consumo de Neon van en UTC.
+    const todayUtc = now.toISOString().slice(0, 10)
+    const yesterday = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10)
     const projectsResponse = await neon('/projects?limit=400', token)
     const rawProjects = (projectsResponse.projects ?? []) as Record<string, unknown>[]
     const orgIds = [...new Set(rawProjects.map((project) => project.org_id).filter((id): id is string => typeof id === 'string'))]
-    const endpointsByProject = new Map<string, { id: string; current_state?: string }>()
+    const endpointsByProject = new Map<string, { id: string; current_state?: string; minCu: number }>()
     await mapLimit(rawProjects, 4, async (project) => {
       const projectId = typeof project.id === 'string' ? project.id : ''
       if (!projectId) return
       try {
         const response = await neon(`/projects/${projectId}/endpoints`, token)
         const endpoint = Array.isArray(response.endpoints) ? response.endpoints[0] : null
-        if (endpoint?.id) endpointsByProject.set(projectId, { id: String(endpoint.id), current_state: typeof endpoint.current_state === 'string' ? endpoint.current_state : undefined })
+        if (endpoint?.id) endpointsByProject.set(projectId, { id: String(endpoint.id), current_state: typeof endpoint.current_state === 'string' ? endpoint.current_state : undefined, minCu: Number(endpoint.autoscaling_limit_min_cu) || 0.25 })
       } catch (error) {
         console.error('[v0] Neon endpoint lookup error:', error)
         diagnostics.push(`Endpoint de ${String(project.name ?? projectId)}: ${neonErrorMessage(error)}`)
@@ -112,6 +117,7 @@ export async function GET(request: Request) {
                 maxChildBranches: 0,
                 transfer: 0,
                 days: new Map(),
+                cuDays: new Map(),
               }
               for (const period of row.periods ?? []) {
                 if (period.period_plan) planByProject.set(row.project_id, period.period_plan)
@@ -144,6 +150,7 @@ export async function GET(request: Request) {
                   if (dayStorageAvgGb > 0) current.storage = dayStorageAvgGb
                   const date = (day.timeframe_start ?? '').slice(0, 10)
                   if (date && useDaily) {
+                    current.cuDays.set(date, (current.cuDays.get(date) ?? 0) + dayCompute)
                     const dayCost =
                       dayCompute * RATES.computePerCuHour +
                       dayStorage * RATES.storagePerGbMonth +
@@ -178,7 +185,11 @@ export async function GET(request: Request) {
       const branches = usage ? usage.extraBranchMonths * RATES.extraBranchPerMonth : 0
       const transfer = usage ? Math.max(0, usage.transfer - RATES.transferIncludedGb) * RATES.transferPerGb : 0
       const total = compute + storage + restore + snapshots + branches + transfer
-      const alerts: { type: 'transfer' | 'branches'; message: string }[] = []
+      const alerts: { type: 'transfer' | 'branches' | 'awake'; message: string }[] = []
+      // Una base que casi no se duerme se paga casi todo el día: suele ser algo que la consulta seguido.
+      const ayerCu = isCurrentMonth && yesterday >= from.slice(0, 10) ? usage?.cuDays.get(yesterday) ?? 0 : 0
+      const ayerHoras = awakeHours(ayerCu, endpointsByProject.get(id)?.minCu ?? 0.25)
+      if (ayerHoras >= AWAKE_ALERT_HOURS) alerts.push({ type: 'awake', message: `Estuvo despierta unas ${Math.round(ayerHoras)} h ayer (se paga cada hora despierta)` })
       if (usage && usage.transfer >= RATES.transferIncludedGb * TRANSFER_WARN_RATIO) {
         alerts.push({
           type: 'transfer',
@@ -225,7 +236,7 @@ export async function GET(request: Request) {
           total: round(total),
         },
         alerts,
-        projectedTotal: round((total / elapsedDays) * daysInMonth),
+        projectedTotal: round(isCurrentMonth && usage ? projectMonth([...usage.days.entries()].map(([date, cost]) => ({ date, cost })), todayUtc, daysInMonth, total) : total),
         dailyCosts,
         spike,
         updatedAt: project.updated_at,
@@ -233,12 +244,13 @@ export async function GET(request: Request) {
     })
 
     const totalCost = projects.reduce((sum, project) => sum + project.cost.total, 0)
+    const projectedCost = projects.reduce((sum, project) => sum + project.projectedTotal, 0)
     return NextResponse.json({
       organizations: [...new Set(projects.map((project: { orgId?: unknown }) => project.orgId).filter(Boolean))].map((id) => ({ id })),
       projects,
       cost: {
         total: round(totalCost),
-        projected: round((totalCost / elapsedDays) * daysInMonth),
+        projected: round(projectedCost),
         elapsedDays,
         daysInMonth,
         currency: 'USD',
