@@ -9,6 +9,7 @@ import type { ClientTask, SheetClient } from '@/lib/admin/clients-shared'
 import { isAutoDebit } from '@/lib/admin/payments'
 import { CERRADOS, EN_CURSO, isoIn, waLink, type Prospect } from '@/lib/admin/prospects'
 import { Agenda, type AgendaItem } from '@/components/admin/agenda'
+import { PushToggle } from '@/components/admin/push-toggle'
 import { AdminShell, PageHeader, Stat, card } from '@/components/admin/ui'
 
 type Neon = { cost: { total: number; projected: number }; projects: { id: string; name: string; spike: { date: string; cost: number } | null; alerts: { message: string }[] }[] }
@@ -130,7 +131,9 @@ export function TodayDashboard() {
 
   return (
     <AdminShell>
-      <PageHeader eyebrow={fecha} title="Hoy" description="Lo que toca atender: seguimientos de ventas, pendientes y cobros de clientes, y el gasto de las bases." />
+      <PageHeader eyebrow={fecha} title="Hoy" description="Lo que toca atender: seguimientos de ventas, pendientes y cobros de clientes, y el gasto de las bases.">
+        <PushToggle />
+      </PageHeader>
 
       {error && <div role="alert" className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 

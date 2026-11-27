@@ -91,3 +91,18 @@ create table if not exists prospect_events (
 );
 
 create index if not exists prospect_events_prospect on prospect_events (prospect_id, created_at desc);
+
+-- Avisos al celular (notificaciones push del panel): un registro por dispositivo que los activó.
+create table if not exists push_subscriptions (
+  endpoint text primary key,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Ajustes internos del panel (claves de las notificaciones push y fecha del último resumen diario).
+create table if not exists app_settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
