@@ -12,6 +12,7 @@ import { reorder } from '@/lib/admin/reorder'
 import { planAmount, profitByClient } from '@/lib/admin/profit'
 import { Agenda, cuando } from '@/components/admin/agenda'
 import { ClientTasks } from '@/components/admin/client-tasks'
+import { ClientHistory } from '@/components/admin/client-history'
 import { useDragSort } from '@/components/admin/use-drag-sort'
 import { ClientFields, MoneyInput, type NeonProject, emptyForm, isCustomPlan, missingFields } from '@/components/admin/client-form'
 
@@ -910,6 +911,7 @@ function ClientDetails({ client, busy, unsubscribed, paidByMp, onClose, onEdit, 
           </div>
         ))}
       </div>
+      <ClientHistory key={client.row} empresa={client.empresa} />
     </Modal>
   )
 }

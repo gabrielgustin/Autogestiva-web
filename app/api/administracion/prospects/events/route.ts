@@ -13,20 +13,36 @@ async function guard() {
 }
 
 // Historial de un prospecto, del más nuevo al más viejo.
+// Con ?negocio=<nombre> (desde la ficha de un cliente) busca el prospecto por nombre y devuelve { prospectId, events }.
 export async function GET(request: Request) {
   const denied = await guard()
   if (denied) return denied
-  const id = new URL(request.url).searchParams.get('id') ?? ''
+  const params = new URL(request.url).searchParams
+  const negocio = params.get('negocio')?.trim().slice(0, 300)
+  if (negocio) {
+    try {
+      const [prospect] = await sql().query('select id::text from prospects where lower(negocio) = lower($1)', [negocio])
+      if (!prospect) return NextResponse.json({ prospectId: null, events: [] })
+      return NextResponse.json({ prospectId: prospect.id, events: await eventsOf(prospect.id) })
+    } catch (error) {
+      console.error('[admin] prospect events by name failed:', error)
+      return NextResponse.json({ error: 'No se pudo cargar el historial' }, { status: 500 })
+    }
+  }
+  const id = params.get('id') ?? ''
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Prospecto inválido' }, { status: 400 })
   try {
-    const rows = await sql().query(
-      `select id::text, tipo, coalesce(texto, '') as texto, to_char(created_at at time zone 'America/Argentina/Cordoba', 'YYYY-MM-DD"T"HH24:MI') as fecha
-       from prospect_events where prospect_id = $1 order by created_at desc, id desc limit 200`,
-      [id],
-    )
-    return NextResponse.json(rows)
+    return NextResponse.json(await eventsOf(id))
   } catch (error) {
     console.error('[admin] prospect events GET failed:', error)
     return NextResponse.json({ error: 'No se pudo cargar el historial' }, { status: 500 })
   }
+}
+
+function eventsOf(id: string) {
+  return sql().query(
+    `select id::text, tipo, coalesce(texto, '') as texto, to_char(created_at at time zone 'America/Argentina/Cordoba', 'YYYY-MM-DD"T"HH24:MI') as fecha
+     from prospect_events where prospect_id = $1 order by created_at desc, id desc limit 200`,
+    [id],
+  )
 }
