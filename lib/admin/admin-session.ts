@@ -48,10 +48,13 @@ function verifySessionToken(token: string | undefined) {
 }
 
 export async function getAdminSession() {
-  // Solo en `next dev` y con la variable en .env.local (ignorado por git): entra sin pedir contraseña. En Vercel NODE_ENV es production, así que nunca aplica.
-  if (process.env.NODE_ENV === 'development' && process.env.ADMIN_DEV_BYPASS === '1') return { id: 'dev-local' }
   const store = await cookies()
-  return verifySessionToken(store.get(SESSION_COOKIE)?.value)
+  const session = verifySessionToken(store.get(SESSION_COOKIE)?.value)
+  if (session) return session
+  // Solo en `next dev` y con la variable en .env.local (ignorado por git): entra sin pedir contraseña. En Vercel NODE_ENV es production, así que nunca aplica.
+  // Va después de la cookie: un login real en local sigue usando su usuario (para probar la seguridad).
+  if (process.env.NODE_ENV === 'development' && process.env.ADMIN_DEV_BYPASS === '1') return { id: 'dev-local' }
+  return null
 }
 
 // The v0 preview renders the app in a cross-site iframe, which needs SameSite=None.

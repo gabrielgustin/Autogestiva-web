@@ -11,6 +11,9 @@ export function LoginForm() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // Con la verificación en dos pasos activa, tras la contraseña se pide el código de la app.
+  const [needCode, setNeedCode] = useState(false)
+  const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -22,9 +25,13 @@ export function LoginForm() {
       const response = await fetch('/api/administracion/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...(needCode && { code }) }),
       })
       const result = await response.json()
+      if (result.needCode) {
+        setNeedCode(true)
+        return
+      }
       if (!response.ok) throw new Error(result.error ?? 'No se pudo iniciar sesión')
       sessionStorage.setItem(TAB_MARKER, '1')
       router.push('/administracion/hoy')
@@ -59,10 +66,16 @@ export function LoginForm() {
             Contraseña
             <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={`${inputClass} mt-1.5`} />
           </label>
+          {needCode && (
+            <label className="text-xs font-semibold text-ink/70">
+              Código de tu app de autenticación
+              <input autoFocus inputMode="numeric" autoComplete="one-time-code" required pattern="[0-9]{6}" placeholder="000000" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className={`${inputClass} mt-1.5 text-center font-mono text-lg tracking-[0.3em]`} />
+            </label>
+          )}
         </div>
         {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <button disabled={loading} className={`${btn.primary} mt-6 h-11 w-full`}>
-          {loading ? 'Ingresando…' : 'Ingresar'}
+          {loading ? 'Ingresando…' : needCode ? 'Verificar e ingresar' : 'Ingresar'}
         </button>
       </form>
     </div>

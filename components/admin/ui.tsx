@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { AlertTriangle, CircleHelp, X } from 'lucide-react'
+import { AlertTriangle, CircleHelp, ShieldCheck, X } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { LogoutButton } from '@/components/admin/session-guard'
 
@@ -47,7 +47,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </Link>
             <span className="eyebrow hidden rounded-full border border-line px-2.5 py-1.5 text-[10px] text-muted-ink sm:inline-block">Panel</span>
           </div>
-          <LogoutButton className="md:order-last" />
+          <div className="flex items-center gap-2 md:order-last">
+            <Link href="/administracion/seguridad" aria-label="Seguridad de la cuenta" title="Seguridad" className={`${btn.icon} size-10 ${pathname.startsWith('/administracion/seguridad') ? '!border-ink !bg-ink !text-white' : ''}`}>
+              <ShieldCheck className="size-4" aria-hidden="true" />
+            </Link>
+            <LogoutButton />
+          </div>
           <nav aria-label="Secciones del panel" className="flex w-full gap-1 rounded-full border border-line bg-paper p-1 md:w-auto">
             {nav.map((item) => (
               <Link

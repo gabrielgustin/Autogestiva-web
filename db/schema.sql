@@ -106,3 +106,18 @@ create table if not exists app_settings (
   value text not null,
   updated_at timestamptz not null default now()
 );
+
+-- Verificación en dos pasos (app de códigos): secreto TOTP del admin y último paso usado (un código no sirve dos veces).
+alter table admin_users add column if not exists totp_secret text;
+alter table admin_users add column if not exists totp_last_step bigint;
+
+-- Intentos fallidos de ingreso al panel: frenan a quien prueba contraseñas (por IP y por email), en todas las instancias.
+create table if not exists login_attempts (
+  id bigserial primary key,
+  ip text not null,
+  email text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists login_attempts_recientes on login_attempts (created_at);
+
