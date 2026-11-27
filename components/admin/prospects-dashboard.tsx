@@ -4,31 +4,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Ban, CalendarClock, Check, ChevronRight, Copy, ExternalLink, Flame, Globe, Instagram, LayoutGrid, List, Mail, MessageCircle, MonitorSmartphone, MoreHorizontal, PauseCircle, Phone, Plus, Search, Send, Sparkles, StickyNote, Trash2, Trophy, Undo2, UserRound, X } from 'lucide-react'
+import { DateField, SelectField } from '@/components/admin/pickers'
+import { WhatsAppIcon } from '@/components/home/primitives'
 import { AdminShell, Badge, EmptyState, Modal, PageHeader, Stat, btn, card, inputClass, useConfirm } from '@/components/admin/ui'
-import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, daysBetween, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
+import { EN_CURSO, ESTADOS, ESTADO_TONE, PRODUCTOS, SIN_CONTACTO, daysBetween, esPrimerContacto, isoIn, mensajeSeguimiento, nombreEstado, normalizeText, phoneDigits, primerMensaje, waLink, type Estado, type Prospect, type ProspectEvent } from '@/lib/admin/prospects'
 
 // Sección Prospectos del panel: agenda del día, embudo por estado, banco de prospectos y ficha con WhatsApp e historial.
 type Toast = { message: string; tone: 'ok' | 'error' }
 type Patch = Partial<Omit<Prospect, 'id' | 'origen' | 'creado'>>
+const estadoOptions = ESTADOS.map((name) => ({ value: name, label: nombreEstado(name) }))
 type Evento = { tipo: string; texto?: string }
 
 const PAGE = 50
 const CERRADOS: Estado[] = ['Cliente', 'Rechazado', 'En pausa']
-const SIN_CONTACTO: Estado[] = ['Prospecto', 'Hacer demo', 'Demo lista']
 const MEDIOS = [
-  { tipo: 'WhatsApp', icon: MessageCircle },
+  { tipo: 'WhatsApp', icon: WhatsAppIcon },
+  { tipo: 'Instagram', icon: Instagram },
   { tipo: 'Llamada', icon: Phone },
   { tipo: 'Mail', icon: Mail },
   { tipo: 'Visita', icon: UserRound },
   { tipo: 'Nota', icon: StickyNote },
-]
-// Tipos de próximo paso: una reunión o un presupuesto se agendan acá, no son columnas del embudo.
-const PASOS = ['Recontactar', 'Reunión', 'Enviar presupuesto']
-const PLAZOS = [
-  { label: 'Mañana', days: 1 },
-  { label: '3 días', days: 3 },
-  { label: '1 semana', days: 7 },
-  { label: '2 semanas', days: 14 },
 ]
 
 const href = (url: string) => (/^https?:\/\//i.test(url) ? url : `https://${url.replace(/^@/, 'instagram.com/')}`)
@@ -380,14 +375,8 @@ export function ProspectsDashboard() {
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar negocio, rubro, web o teléfono" className={`${inputClass} pl-9`} />
             </label>
             <div className="grid grid-cols-2 gap-2 md:flex">
-              <select aria-label="Producto" value={producto} onChange={(e) => setProducto(e.target.value)} className={`${inputClass} md:w-44`}>
-                <option value="todos">Todos los productos</option>
-                {productos.map((name) => <option key={name}>{name}</option>)}
-              </select>
-              <select aria-label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} className={`${inputClass} md:w-44`}>
-                <option value="todos">Todos los estados</option>
-                {ESTADOS.map((name) => <option key={name} value={name}>{nombreEstado(name)}</option>)}
-              </select>
+              <SelectField ariaLabel="Producto" value={producto} onChange={setProducto} options={[{ value: 'todos', label: 'Todos los productos' }, ...productos]} className="min-w-0 md:w-52" />
+              <SelectField ariaLabel="Estado" value={estado} onChange={setEstado} options={[{ value: 'todos', label: 'Todos los estados' }, ...estadoOptions]} className="min-w-0 md:w-48" />
               <button type="button" aria-pressed={soloWa} onClick={() => setSoloWa((v) => !v)} className={`col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors ${soloWa ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-line bg-white text-ink/70 hover:text-ink'}`}>
                 <MessageCircle className="size-4" /> Con WhatsApp
               </button>
@@ -480,10 +469,8 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
   const [nota, setNota] = useState('')
   const [paso, setPaso] = useState(p.proximoPaso || 'Recontactar')
   const [fecha, setFecha] = useState(p.proximoFecha)
-  const [mensaje, setMensaje] = useState(() => (SIN_CONTACTO.includes(p.estado) ? primerMensaje(p) : mensajeSeguimiento(p)))
   const [busy, setBusy] = useState(false)
   const [viewing, setViewing] = useState<{ label: string; url: string } | null>(null)
-  const wa = waLink(p.whatsapp, mensaje)
 
   const loadEvents = useCallback(() => {
     api(`/api/administracion/prospects/events?id=${p.id}`).then(setEvents).catch(() => setEvents([]))
@@ -515,14 +502,12 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
     return run(patch, { tipo, texto }, tipo === 'Nota' ? 'Nota guardada' : `Contacto registrado${patch.proximoFecha ? ` · próximo: ${fmtDay(patch.proximoFecha)}` : ''}`)
   }
 
-  function enviarWhatsApp() {
-    const proximo = fecha ? { paso, fecha } : { paso: 'Recontactar', fecha: isoIn(3) }
-    setFecha(proximo.fecha)
-    registrar('WhatsApp', SIN_CONTACTO.includes(p.estado) ? 'Primer mensaje enviado desde el panel' : 'Mensaje de seguimiento enviado desde el panel', proximo)
-  }
-
   async function guardarContacto() {
-    if (await registrar(medio, nota.trim() || (medio === 'Nota' ? '' : `Contacto por ${medio.toLowerCase()}`))) setNota('')
+    if (!(await registrar(medio, nota.trim() || (medio === 'Nota' ? '' : `Contacto por ${medio.toLowerCase()}`)))) return
+    setNota('')
+    // Con datos del negocio sin guardar la ficha queda abierta: cerrarla los perdería.
+    if (changed.length) notify('Contacto registrado · falta guardar los datos del negocio')
+    else onClose()
   }
 
   // Solo los campos del formulario: estado y próximo paso se cambian arriba y no deben pisarse desde acá.
@@ -546,13 +531,16 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
     }
   }
 
+  // Abre el chat del número cargado a mano; solo la primera vez (y con demo) lleva el mensaje armado. No registra el contacto.
+  const wa = waLink(p.whatsapp, esPrimerContacto(p) && p.demo ? primerMensaje(p) : '')
+
   const links = [
     p.web && { label: p.producto === 'Carta digital' ? 'Carta actual' : 'Web actual', url: p.web, icon: Globe, view: true },
     p.demo && { label: 'Demo', url: p.demo, icon: MonitorSmartphone, view: true },
     p.instagram && { label: 'Instagram', url: p.instagram, icon: Instagram },
     p.email && { label: 'Email', url: `mailto:${p.email}`, icon: Mail },
-    p.whatsapp && { label: p.whatsapp, url: `tel:${p.whatsapp}`, icon: Phone },
-  ].filter(Boolean) as { label: string; url: string; icon: typeof Globe; view?: boolean }[]
+    p.whatsapp && (wa ? { label: p.whatsapp, url: wa, icon: WhatsAppIcon, whatsapp: true } : { label: p.whatsapp, url: `tel:${p.whatsapp}`, icon: Phone }),
+  ].filter(Boolean) as { label: string; url: string; icon: React.ComponentType<{ className?: string }>; view?: boolean; whatsapp?: boolean }[]
 
   return (
     <Modal
@@ -569,70 +557,47 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
     >
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor="estado">Estado</label>
-          <select id="estado" value={p.estado} disabled={busy} onChange={(e) => run({ estado: e.target.value as Estado }, undefined, `Pasó a «${nombreEstado(e.target.value)}»`)} className="h-9 rounded-full border border-line bg-paper px-3 text-sm font-semibold outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
-            {ESTADOS.map((e) => <option key={e} value={e}>{nombreEstado(e)}</option>)}
-          </select>
-          {links.map(({ label, url, icon: Icon, view }) => {
+          <SelectField ariaLabel="Estado" value={p.estado} disabled={busy} onChange={(value) => run({ estado: value as Estado }, undefined, `Pasó a «${nombreEstado(value)}»`)} options={estadoOptions} className="h-9 w-auto min-w-40 rounded-full bg-paper font-semibold" />
+          {links.map(({ label, url, icon: Icon, view, whatsapp }) => {
             const pill = 'inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-sm font-medium text-ink/80 transition-colors hover:border-ink/30 hover:text-ink'
             return view ? (
               <button key={label} type="button" onClick={() => setViewing({ label, url: href(url) })} className={pill}>
                 <Icon className="size-3.5" /> {label}
               </button>
             ) : (
-              <a key={label} href={url.startsWith('mailto:') || url.startsWith('tel:') ? url : href(url)} target="_blank" rel="noreferrer" className={pill}>
+              <a key={label} href={url.startsWith('mailto:') || url.startsWith('tel:') ? url : href(url)} target="_blank" rel="noreferrer" aria-label={whatsapp ? `Abrir WhatsApp de ${label}` : undefined} className={whatsapp ? 'inline-flex h-9 items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/30' : pill}>
                 <Icon className="size-3.5" /> {label}
               </a>
             )
           })}
         </div>
 
-        {/* En pantallas anchas: a la izquierda lo que se hace (mensaje y contacto), a la derecha lo que se sabe. */}
+        {/* En pantallas anchas: a la izquierda los datos del negocio, a la derecha el contacto y el historial. */}
         <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col gap-6">
         <section className="rounded-2xl border border-line p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="font-semibold">Mensaje de WhatsApp</h3>
-            <div className="flex gap-1 text-xs">
-              <button type="button" className="rounded-full px-2 py-1 text-muted-ink hover:bg-paper hover:text-ink" onClick={() => setMensaje(primerMensaje(p))}>Primer mensaje</button>
-              <button type="button" className="rounded-full px-2 py-1 text-muted-ink hover:bg-paper hover:text-ink" onClick={() => setMensaje(mensajeSeguimiento(p))}>Seguimiento</button>
+          <h3 className="font-semibold">Datos del negocio</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {DATA_FIELDS.map(({ key, label, type, wide }) => (
+              <label key={key} className={`text-xs font-medium text-muted-ink ${wide ? 'sm:col-span-2' : ''}`}>
+                {label}
+                <input type={type ?? 'text'} value={(form[key] as string) ?? ''} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className={`${inputClass} mt-1`} />
+              </label>
+            ))}
+            <div className="text-xs font-medium text-muted-ink">
+              Producto
+              <SelectField ariaLabel="Producto" value={form.producto ?? ''} onChange={(producto) => setForm((f) => ({ ...f, producto }))} options={[...PRODUCTOS]} className="mt-1" />
             </div>
+            <label className="text-xs font-medium text-muted-ink sm:col-span-2">
+              Qué ofrecerle
+              <textarea value={form.motivo ?? ''} onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))} rows={2} className={`${inputClass} mt-1 h-auto py-2.5`} />
+            </label>
+            <label className="text-xs font-medium text-muted-ink sm:col-span-2">
+              Notas
+              <textarea value={form.notas ?? ''} onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))} rows={3} className={`${inputClass} mt-1 h-auto py-2.5`} />
+            </label>
           </div>
-          <textarea aria-label="Mensaje" value={mensaje} onChange={(e) => setMensaje(e.target.value)} rows={5} className={`${inputClass} mt-3 h-auto py-2.5 leading-relaxed`} />
-          {wa ? (
-            <a href={wa} target="_blank" rel="noreferrer" onClick={enviarWhatsApp} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/30">
-              <MessageCircle className="size-4" /> Enviar por WhatsApp
-            </a>
-          ) : (
-            <p className="mt-3 text-xs text-muted-ink">Para escribirle desde acá, cargá un WhatsApp de 10 dígitos en los datos del negocio.</p>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-line p-4">
-          <h3 className="font-semibold">Registrar contacto</h3>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {MEDIOS.map(({ tipo, icon: Icon }) => (
-              <button key={tipo} type="button" aria-pressed={medio === tipo} onClick={() => setMedio(tipo)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${medio === tipo ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink/70 hover:text-ink'}`}>
-                <Icon className="size-3.5" /> {tipo}
-              </button>
-            ))}
-          </div>
-          <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder={medio === 'Nota' ? 'Escribí la nota' : '¿Qué pasó? (opcional)'} className={`${inputClass} mt-3`} />
-          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_170px]">
-            <label className="text-xs font-medium text-muted-ink">Próximo paso<input value={paso} onChange={(e) => setPaso(e.target.value)} className={`${inputClass} mt-1`} /></label>
-            <label className="text-xs font-medium text-muted-ink">Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={`${inputClass} mt-1`} /></label>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {PASOS.map((name) => (
-              <button key={name} type="button" onClick={() => setPaso(name)} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors ${paso === name ? 'bg-orange-50 text-orange-700 ring-orange-200' : 'text-muted-ink ring-line hover:text-ink'}`}>{name}</button>
-            ))}
-            <span className="mx-1 w-px self-stretch bg-line" />
-            {PLAZOS.map(({ label, days }) => (
-              <button key={label} type="button" onClick={() => setFecha(isoIn(days))} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors ${fecha === isoIn(days) ? 'bg-brand-light text-brand ring-brand/30' : 'text-muted-ink ring-line hover:text-ink'}`}>{label}</button>
-            ))}
-            <button type="button" onClick={() => setFecha('')} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${!fecha ? 'bg-paper text-ink ring-ink/20' : 'text-muted-ink ring-line hover:text-ink'}`}>Sin fecha</button>
-          </div>
-          <button type="button" disabled={busy || (medio === 'Nota' && !nota.trim())} onClick={guardarContacto} className={`${btn.primary} mt-4 w-full`}>{medio === 'Nota' ? 'Guardar nota' : 'Guardar contacto'}</button>
+          <button type="button" disabled={busy || changed.length === 0} onClick={guardarDatos} className={`${btn.primary} mt-4`}>Guardar datos</button>
         </section>
 
         </div>
@@ -644,34 +609,22 @@ function ProspectSheet({ prospect: p, api, save, notify, today, onClose, onDelet
           </div>
         )}
 
-        <details className="group rounded-2xl border border-line p-4">
-          <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
-            Datos del negocio <ChevronRight className="size-4 text-ink/40 transition-transform group-open:rotate-90" />
-          </summary>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {DATA_FIELDS.map(({ key, label, type, wide }) => (
-              <label key={key} className={`text-xs font-medium text-muted-ink ${wide ? 'sm:col-span-2' : ''}`}>
-                {label}
-                <input type={type ?? 'text'} value={(form[key] as string) ?? ''} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className={`${inputClass} mt-1`} />
-              </label>
+        <section className="rounded-2xl border border-line p-4">
+          <h3 className="font-semibold">Registrar contacto</h3>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {MEDIOS.map(({ tipo, icon: Icon }) => (
+              <button key={tipo} type="button" aria-label={tipo} title={tipo} aria-pressed={medio === tipo} onClick={() => setMedio(tipo)} className={`inline-flex size-10 items-center justify-center rounded-full border transition-colors ${medio === tipo ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink/70 hover:text-ink'}`}>
+                <Icon className="size-[18px]" />
+              </button>
             ))}
-            <label className="text-xs font-medium text-muted-ink">
-              Producto
-              <select value={form.producto} onChange={(e) => setForm((f) => ({ ...f, producto: e.target.value }))} className={`${inputClass} mt-1`}>
-                {PRODUCTOS.map((name) => <option key={name}>{name}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-muted-ink sm:col-span-2">
-              Qué ofrecerle
-              <textarea value={form.motivo ?? ''} onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))} rows={2} className={`${inputClass} mt-1 h-auto py-2.5`} />
-            </label>
-            <label className="text-xs font-medium text-muted-ink sm:col-span-2">
-              Notas
-              <textarea value={form.notas ?? ''} onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))} rows={3} className={`${inputClass} mt-1 h-auto py-2.5`} />
-            </label>
           </div>
-          <button type="button" disabled={busy || changed.length === 0} onClick={guardarDatos} className={`${btn.primary} mt-4`}>Guardar datos</button>
-        </details>
+          <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder={medio === 'Nota' ? 'Escribí la nota' : '¿Qué pasó? (opcional)'} className={`${inputClass} mt-3`} />
+          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_170px]">
+            <label className="text-xs font-medium text-muted-ink">Próximo paso<input value={paso} onChange={(e) => setPaso(e.target.value)} className={`${inputClass} mt-1`} /></label>
+            <div className="text-xs font-medium text-muted-ink">Fecha<div className="mt-1"><DateField ariaLabel="Fecha del próximo paso" value={fecha} onChange={setFecha} /></div></div>
+          </div>
+          <button type="button" disabled={busy || (medio === 'Nota' && !nota.trim())} onClick={guardarContacto} className={`${btn.primary} mt-4 w-full`}>{medio === 'Nota' ? 'Guardar nota' : 'Guardar contacto'}</button>
+        </section>
 
         <section>
           <h3 className="font-semibold">Historial</h3>
@@ -724,7 +677,8 @@ function CardMenu({ p, anchor, today, onClose, onOpen, onAction, notify }: { p: 
   }, [onClose])
   const act = (patch: Patch, evento: Evento | undefined, ok: string) => { onClose(); onAction(patch, evento, ok) }
   const nuevo = SIN_CONTACTO.includes(p.estado)
-  const wa = waLink(p.whatsapp, nuevo ? primerMensaje(p) : mensajeSeguimiento(p))
+  const primera = esPrimerContacto(p)
+  const wa = waLink(p.whatsapp, primera ? primerMensaje(p) : mensajeSeguimiento(p))
   const item = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-ink/85 transition-colors hover:bg-paper hover:text-ink [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-ink/45'
   // Portal con posición fija junto al botón: así el menú no queda recortado por el scroll del tablero.
   const width = 256
@@ -736,7 +690,7 @@ function CardMenu({ p, anchor, today, onClose, onOpen, onAction, notify }: { p: 
       <div role="menu" aria-label={`Opciones de ${p.negocio}`} style={position} className="animate-rise-in fixed z-[46] w-64 rounded-2xl border border-line bg-white p-1.5 shadow-[0_24px_60px_-20px_rgba(11,19,34,0.45)] [animation-duration:180ms]">
         <button role="menuitem" type="button" className={item} onClick={onOpen}><ChevronRight /> Abrir ficha</button>
         {wa && (
-          <a role="menuitem" href={wa} target="_blank" rel="noreferrer" className={item} onClick={() => act({ fechaContacto: today, ...(nuevo && { estado: 'Contactado' as Estado }), proximoPaso: p.proximoPaso || 'Recontactar', proximoFecha: p.proximoFecha || isoIn(3) }, { tipo: 'WhatsApp', texto: nuevo ? 'Primer mensaje enviado desde el embudo' : 'Mensaje de seguimiento enviado desde el embudo' }, 'Contacto registrado')}>
+          <a role="menuitem" href={wa} target="_blank" rel="noreferrer" className={item} onClick={() => act({ fechaContacto: today, ...(nuevo && { estado: 'Contactado' as Estado }), proximoPaso: p.proximoPaso || 'Recontactar', proximoFecha: p.proximoFecha || isoIn(3) }, { tipo: 'WhatsApp', texto: primera ? 'Primer mensaje enviado desde el embudo' : 'Mensaje de seguimiento enviado desde el embudo' }, 'Contacto registrado')}>
             <MessageCircle /> Escribir por WhatsApp
           </a>
         )}
@@ -810,7 +764,7 @@ function NewProspect({ api, onClose, onCreated }: { api: Api; onClose: () => voi
   const [form, setForm] = useState({ negocio: '', producto: 'Rediseño web', rubro: '', whatsapp: '', web: '', instagram: '', demo: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -828,9 +782,9 @@ function NewProspect({ api, onClose, onCreated }: { api: Api; onClose: () => voi
     <Modal eyebrow="Ventas" title="Nuevo prospecto" onClose={onClose}>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-muted-ink sm:col-span-2">Negocio *<input required autoFocus value={form.negocio} onChange={set('negocio')} className={`${inputClass} mt-1`} /></label>
-        <label className="text-xs font-medium text-muted-ink">Producto
-          <select value={form.producto} onChange={set('producto')} className={`${inputClass} mt-1`}>{PRODUCTOS.map((name) => <option key={name}>{name}</option>)}</select>
-        </label>
+        <div className="text-xs font-medium text-muted-ink">Producto
+          <SelectField ariaLabel="Producto" value={form.producto} onChange={(producto) => setForm((f) => ({ ...f, producto }))} options={[...PRODUCTOS]} className="mt-1" />
+        </div>
         <label className="text-xs font-medium text-muted-ink">Rubro<input value={form.rubro} onChange={set('rubro')} className={`${inputClass} mt-1`} /></label>
         <label className="text-xs font-medium text-muted-ink">WhatsApp<input type="tel" value={form.whatsapp} onChange={set('whatsapp')} placeholder="351 123 4567" className={`${inputClass} mt-1`} /></label>
         <label className="text-xs font-medium text-muted-ink">Instagram<input value={form.instagram} onChange={set('instagram')} className={`${inputClass} mt-1`} /></label>

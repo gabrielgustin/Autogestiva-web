@@ -108,12 +108,30 @@ export function daysBetween(fromIso: string, toIso: string) {
   return Math.round((Date.parse(`${toIso}T12:00:00`) - Date.parse(`${fromIso}T12:00:00`)) / 86_400_000)
 }
 
-// Primer mensaje de WhatsApp: si ya hay demo la manda; si no, ofrece armarla.
+export const SIN_CONTACTO: readonly Estado[] = ['Prospecto', 'Hacer demo', 'Demo lista']
+// Una tarjeta devuelta a «Por contactar» después de hablarle conserva la fecha: ya no es la primera vez.
+export const esPrimerContacto = (p: Pick<Prospect, 'estado' | 'fechaContacto'>) => !p.fechaContacto && SIN_CONTACTO.includes(p.estado)
+
+const PROPUESTA: Record<string, string> = { 'Carta digital': 'carta digital para su local', 'Juegos para eventos': 'juegos para sus eventos' }
+
+// Primer mensaje de WhatsApp: si ya hay demo la manda (texto de Gabriel); si no, ofrece armarla.
 export function primerMensaje(p: Pick<Prospect, 'negocio' | 'producto' | 'contacto' | 'demo' | 'web'>) {
   const saludo = p.contacto ? `¡Hola ${p.contacto.split(' ')[0]}! ¿Cómo estás?` : '¡Hola! ¿Cómo están?'
   const que = p.producto === 'Carta digital' ? 'una carta digital' : p.producto === 'Juegos para eventos' ? 'juegos para sus eventos' : 'una web nueva'
   if (p.demo) {
-    return `${saludo} Soy Gabriel, de Autogestiva. Les preparé sin compromiso ${que} para ${p.negocio}, para que vean cómo podría quedar:\n${p.demo}\n\nSe ve bien en el celular y la pueden recorrer como si ya estuviera publicada. ¿La miran y me cuentan qué les parece?`
+    return `Mucho gusto 🤝
+Soy Gabriel, tengo una consultora de desarrollo web y estuve viendo el trabajo de ${p.negocio} y me tomé el atrevimiento de armarles una propuesta de ${PROPUESTA[p.producto] ?? 'rediseño para su página web'} *sin costo*, mi objetivo es consolidarlos como clientes!
+
+Usé su misma información y fotos, con un diseño más actual y pensado para verse muy bien en el celular.
+
+Les dejo el link por si te interesa verla:
+👉 ${p.demo}
+
+Es una demo, así que se puede ajustar todo lo que quieran.
+Si les gusta, coordinamos una llamada corta y la charlamos.
+Les agradecería una respuesta!
+
+¡Saludos! 🙌`
   }
   return `${saludo} Soy Gabriel, de Autogestiva. Estuve mirando ${p.web ? 'la web' : 'la presencia online'} de ${p.negocio} y se me ocurrieron algunas mejoras. ¿Les interesa que les arme, sin cargo, una propuesta de ${que} para que la vean funcionando?`
 }

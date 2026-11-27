@@ -1,6 +1,6 @@
 // Autocontrol: npx tsx lib/admin/__checks__/prospects.check.ts
 import assert from 'node:assert/strict'
-import { daysBetween, isoIn, phoneDigits, toDbRow, waLink } from '../prospects'
+import { daysBetween, esPrimerContacto, isoIn, phoneDigits, primerMensaje, toDbRow, waLink } from '../prospects'
 
 assert.equal(phoneDigits('+54 9 351 342-0260'), '3513420260')
 assert.equal(phoneDigits('+54 351 460-1175'), '3514601175')
@@ -22,4 +22,14 @@ assert.deepEqual(toDbRow({ producto: 'Inventado', rubro: '' }), { row: { product
 
 assert.equal(isoIn(1, new Date(2026, 11, 31)), '2027-01-01')
 assert.equal(daysBetween('2026-11-26', '2026-12-03'), 7)
+const base = { negocio: 'PROIL', producto: 'Rediseño web', contacto: '', web: '', demo: 'https://proil-demo.vercel.app' }
+const texto = primerMensaje(base)
+assert.ok(texto.startsWith('Mucho gusto 🤝\nSoy Gabriel') && texto.endsWith('¡Saludos! 🙌'))
+assert.ok(texto.includes('el trabajo de PROIL') && texto.includes('rediseño para su página web *sin costo*') && texto.includes('👉 https://proil-demo.vercel.app\n'))
+assert.ok(primerMensaje({ ...base, producto: 'Carta digital' }).includes('propuesta de carta digital para su local *sin costo*'))
+assert.ok(!primerMensaje({ ...base, demo: '' }).includes('👉'))
+assert.equal(decodeURIComponent(waLink('3517608037', texto).split('?text=')[1]), texto)
+assert.ok(esPrimerContacto({ estado: 'Demo lista', fechaContacto: '' }))
+assert.ok(!esPrimerContacto({ estado: 'Prospecto', fechaContacto: '2026-11-20' }))
+assert.ok(!esPrimerContacto({ estado: 'Contactado', fechaContacto: '' }))
 console.log('prospects ok')

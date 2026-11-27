@@ -4,11 +4,12 @@ import { useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
 import * as Select from '@radix-ui/react-select'
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 // Selectores con el lenguaje visual de la web, en lugar de los nativos del navegador (que cambian según el sistema).
 
 const trigger =
-  'flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-line bg-white px-3 text-left text-sm text-ink outline-none transition-shadow hover:border-ink/25 focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10 data-[state=open]:border-brand data-[state=open]:ring-4 data-[state=open]:ring-brand/10'
+  'flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-line bg-white px-3 text-left text-sm text-ink outline-none transition-shadow hover:border-ink/25 focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10 data-[state=open]:border-brand data-[state=open]:ring-4 data-[state=open]:ring-brand/10 disabled:cursor-not-allowed disabled:opacity-50'
 const panel = 'z-[80] rounded-2xl border border-line bg-white p-2 shadow-[0_24px_60px_-20px_rgba(11,19,34,0.35)] animate-in fade-in-0 zoom-in-95'
 
 type Option = string | { value: string; label: string }
@@ -16,10 +17,10 @@ const optionValue = (option: Option) => (typeof option === 'string' ? option : o
 const optionLabel = (option: Option) => (typeof option === 'string' ? option : option.label)
 
 // Radix no admite un ítem con valor vacío: el vacío se muestra como placeholder.
-export function SelectField({ value, onChange, options, placeholder = 'Elegí una opción', ariaLabel, className = '' }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder?: string; ariaLabel?: string; className?: string }) {
+export function SelectField({ value, onChange, options, placeholder = 'Elegí una opción', ariaLabel, disabled, className }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder?: string; ariaLabel?: string; disabled?: boolean; className?: string }) {
   return (
-    <Select.Root value={value || undefined} onValueChange={onChange}>
-      <Select.Trigger aria-label={ariaLabel} className={`${trigger} ${className}`}>
+    <Select.Root value={value || undefined} onValueChange={onChange} disabled={disabled}>
+      <Select.Trigger aria-label={ariaLabel} className={cn(trigger, className)}>
         <span className="truncate"><Select.Value placeholder={<span className="text-ink/40">{placeholder}</span>} /></span>
         <Select.Icon><ChevronDown className="size-4 shrink-0 text-ink/50" aria-hidden="true" /></Select.Icon>
       </Select.Trigger>

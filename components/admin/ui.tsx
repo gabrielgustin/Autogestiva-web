@@ -118,10 +118,11 @@ export function Modal({ title, eyebrow, onClose, children, footer, wide }: { tit
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[data-radix-popper-content-wrapper], [data-confirm-dialog]')) onClose() }
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', onKey)
+    // En captura: corre antes de que el desplegable se cierre solo; si no, ya no lo encuentra y cierra también la ventana.
+    window.addEventListener('keydown', onKey, true)
     return () => {
       document.body.style.overflow = previous
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [onClose])
 
